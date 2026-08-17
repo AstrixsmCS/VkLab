@@ -1,0 +1,270 @@
+#include "GraphicsPipeline.hpp"
+
+#include "RendererContext.hpp"
+
+void Pipeline::Create(const PipelineSpecification &specification)
+{
+	m_Specification = specification;
+
+	VkDevice device = RendererContext::GetDevice()->GetDevice();
+
+	CreatePipelineLayout();
+
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// Shader Stages
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	assert(m_Specification.Shader);
+	assert(m_Specification.Shader->IsValid());
+
+	const auto& shaderStages = m_Specification.Shader->GetStageInfos();
+
+	assert(!shaderStages.empty());
+
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// Dynamic Rendering
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	std::vector<VkFormat> colorFormats;
+	colorFormats.reserve(m_Specification.ColorFormats.size());
+
+	for (Format format : m_Specification.ColorFormats)
+	{
+		colorFormats.push_back(ToVulkan(format));
+	}
+
+	VkPipelineRenderingCreateInfo renderingInfo
+	{
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+		.viewMask = 0,
+		.colorAttachmentCount = static_cast<uint32_t>(colorFormats.size()),
+		.pColorAttachmentFormats = colorFormats.empty() ? nullptr : colorFormats.data(),
+		.depthAttachmentFormat = m_Specification.DepthFormat != Format::Invalid ? ToVulkan(m_Specification.DepthFormat) : VK_FORMAT_UNDEFINED,
+		.stencilAttachmentFormat = VK_FORMAT_UNDEFINED
+	};
+
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// Vertex Input
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	VkPipelineVertexInputStateCreateInfo vertexInputInfo
+	{
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+		.flags = 0,
+		.vertexBindingDescriptionCount = static_cast<uint32_t>(m_Specification.BindingDescriptions.size()),
+		.pVertexBindingDescriptions = m_Specification.BindingDescriptions.empty() ? nullptr : m_Specification.BindingDescriptions.data(),
+		.vertexAttributeDescriptionCount = static_cast<uint32_t>(m_Specification.AttributeDescriptions.size()),
+		.pVertexAttributeDescriptions = m_Specification.AttributeDescriptions.empty() ? nullptr : m_Specification.AttributeDescriptions.data()
+	};
+
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// Input Assembly
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	VkPipelineInputAssemblyStateCreateInfo inputAssemblyInfo
+	{
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+		.flags = 0,
+		.topology = ToVulkan(m_Specification.Topology),
+		.primitiveRestartEnable = VK_FALSE
+	};
+
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// Viewport
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	VkPipelineViewportStateCreateInfo viewportInfo
+	{
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+		.flags = 0,
+		.viewportCount = 1,
+		.scissorCount = 1
+	};
+
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// Rasterization
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	VkPipelineRasterizationStateCreateInfo rasterizationInfo
+	{
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+		.flags = 0,
+		.depthClampEnable = VK_FALSE,
+		.rasterizerDiscardEnable = VK_FALSE,
+		.polygonMode = ToVulkan(m_Specification.PolygonMode),
+		.cullMode = ToVulkan(m_Specification.CullMode),
+		.frontFace = ToVulkan(m_Specification.FrontFace),
+		.depthBiasEnable = VK_FALSE,
+		.lineWidth = 1.0f
+	};
+
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// Multisampling
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	VkPipelineMultisampleStateCreateInfo multisampleInfo
+	{
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+		.flags = 0,
+		.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+		.sampleShadingEnable = VK_FALSE
+	};
+
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// Depth / Stencil
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	VkPipelineDepthStencilStateCreateInfo depthStencilInfo
+	{
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+		.flags = 0,
+		.depthTestEnable = m_Specification.DepthTest ? VK_TRUE : VK_FALSE,
+		.depthWriteEnable = m_Specification.DepthWrite ? VK_TRUE : VK_FALSE,
+		.depthCompareOp = ToVulkan(m_Specification.DepthCompareOp),
+		.depthBoundsTestEnable = VK_FALSE,
+		.stencilTestEnable = VK_FALSE
+	};
+
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// Blending
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	std::vector<VkPipelineColorBlendAttachmentState> blendAttachments(m_Specification.ColorFormats.size());
+
+	for (uint32_t i = 0; i < blendAttachments.size(); i++)
+	{
+		VkPipelineColorBlendAttachmentState& attachment = blendAttachments[i];
+
+		attachment.colorWriteMask =
+			VK_COLOR_COMPONENT_R_BIT |
+			VK_COLOR_COMPONENT_G_BIT |
+			VK_COLOR_COMPONENT_B_BIT |
+			VK_COLOR_COMPONENT_A_BIT;
+
+		const Format format = m_Specification.ColorFormats[i];
+
+		const bool integerFormat =
+			format == Format::R_UI16 ||
+			format == Format::R_UI32 ||
+			format == Format::RG_UI16 ||
+			format == Format::RG_UI32 ||
+			format == Format::RGBA_UI32;
+
+		attachment.blendEnable = (m_Specification.BlendEnabled && !integerFormat) ? VK_TRUE : VK_FALSE;
+
+		if (attachment.blendEnable)
+		{
+			attachment.srcColorBlendFactor = ToVulkan(m_Specification.SrcColorBlendFactor);
+			attachment.dstColorBlendFactor = ToVulkan(m_Specification.DstColorBlendFactor);
+			attachment.colorBlendOp = VK_BLEND_OP_ADD;
+
+			attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+			attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+			attachment.alphaBlendOp = VK_BLEND_OP_ADD;
+		}
+	}
+
+	VkPipelineColorBlendStateCreateInfo blendInfo
+	{
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+		.flags = 0,
+		.logicOpEnable = VK_FALSE,
+		.attachmentCount = static_cast<uint32_t>(blendAttachments.size()),
+		.pAttachments = blendAttachments.empty() ? nullptr : blendAttachments.data()
+	};
+
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// Dynamic State
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	const VkDynamicState dynamicStates[]
+	{
+		VK_DYNAMIC_STATE_VIEWPORT,
+		VK_DYNAMIC_STATE_SCISSOR
+	};
+
+	VkPipelineDynamicStateCreateInfo dynamicStateInfo
+	{
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+		.flags = 0,
+		.dynamicStateCount = static_cast<uint32_t>(std::size(dynamicStates)),
+		.pDynamicStates = dynamicStates
+	};
+
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// Graphics Pipeline
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	VkGraphicsPipelineCreateInfo pipelineInfo
+	{
+		.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+		.pNext = &renderingInfo,
+		.flags = 0,
+		.stageCount = static_cast<uint32_t>(shaderStages.size()),
+		.pStages = shaderStages.data(),
+		.pVertexInputState = &vertexInputInfo,
+		.pInputAssemblyState = &inputAssemblyInfo,
+		.pViewportState = &viewportInfo,
+		.pRasterizationState = &rasterizationInfo,
+		.pMultisampleState = &multisampleInfo,
+		.pDepthStencilState = &depthStencilInfo,
+		.pColorBlendState = &blendInfo,
+		.pDynamicState = &dynamicStateInfo,
+		.layout = m_PipelineLayout,
+		.renderPass = VK_NULL_HANDLE,
+		.subpass = 0
+	};
+
+	VK_CHECK(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_Pipeline));
+
+	if (!m_Specification.DebugName.empty())
+	{
+		SetDebugUtilsObjectName(device, VK_OBJECT_TYPE_PIPELINE, m_Specification.DebugName, m_Pipeline);
+	}
+
+}
+
+void Pipeline::CreatePipelineLayout()
+{
+	VkDevice device = RendererContext::GetDevice()->GetDevice();
+
+	VkPipelineLayoutCreateInfo layoutInfo
+	{
+		.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+		.flags                  = 0,
+		.setLayoutCount         = 0,
+		.pSetLayouts            = nullptr,
+		.pushConstantRangeCount = 0,
+		.pPushConstantRanges    = nullptr
+	};
+
+	VK_CHECK(vkCreatePipelineLayout(device, &layoutInfo, nullptr, &m_PipelineLayout));
+
+	if (!m_Specification.DebugName.empty())
+	{
+		const std::string layoutName = m_Specification.DebugName + " Layout";
+		SetDebugUtilsObjectName(device, VK_OBJECT_TYPE_PIPELINE_LAYOUT, layoutName, m_PipelineLayout);
+	}
+}
+
+void Pipeline::Bind(VkCommandBuffer commandBuffer) const
+{
+	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_Pipeline);
+}
+
+void Pipeline::Shutdown()
+{
+	VkDevice device = RendererContext::GetDevice()->GetDevice();
+
+	if (m_Pipeline != VK_NULL_HANDLE)
+	{
+		vkDestroyPipeline(device, m_Pipeline, nullptr);
+		m_Pipeline = VK_NULL_HANDLE;
+	}
+
+	if (m_PipelineLayout != VK_NULL_HANDLE)
+	{
+		vkDestroyPipelineLayout(device, m_PipelineLayout, nullptr);
+		m_PipelineLayout = VK_NULL_HANDLE;
+	}
+}
