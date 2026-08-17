@@ -3,7 +3,7 @@
 #include "RendererContext.hpp"
 #include "ShaderCompiler.hpp"
 
-void Shader::Initialize(const std::filesystem::path& filePath)
+void Shader::Load(const std::filesystem::path& filePath)
 {
 	m_Path = filePath;
 

@@ -130,27 +130,16 @@ ShaderCompileResult ShaderCompiler::Compile(const std::filesystem::path& sourceP
 		return result;
 	}
 
-	std::vector<Slang::ComPtr<slang::IEntryPoint>> entryPoints;
-	std::vector<slang::IComponentType*> components;
-	entryPoints.reserve(static_cast<size_t>(entryPointCount));
-	components.reserve(static_cast<size_t>(entryPointCount) + 1);
-	components.push_back(module);
-
 	for (SlangInt i = 0; i < entryPointCount; ++i)
 	{
 		Slang::ComPtr<slang::IEntryPoint> entryPoint;
 		if (SLANG_FAILED(module->getDefinedEntryPoint(i, entryPoint.writeRef())))
-			return result;
-
-		SlangStage slangStage = entryPoint->getLayout(0)->getEntryPointByIndex(0)->getStage();
-		const ShaderStage stage = FromSlangStage(slangStage);
-
-		if (stage == ShaderStage::None)
 			continue;
 
-		result.Stages.push_back(stage);
-		components.push_back(entryPoint.get());
-		entryPoints.push_back(std::move(entryPoint));
+		const ShaderStage stage = FromSlangStage(entryPoint->getLayout(0)->getEntryPointByIndex(0)->getStage());
+
+		if (stage != ShaderStage::None)
+			result.Stages.push_back(stage);
 	}
 
 	if (result.Stages.empty())
@@ -159,25 +148,9 @@ ShaderCompileResult ShaderCompiler::Compile(const std::filesystem::path& sourceP
 		return result;
 	}
 
-	Slang::ComPtr<slang::IComponentType> program;
-	diagnostics = nullptr;
-	if (SLANG_FAILED(session->createCompositeComponentType(components.data(), static_cast<SlangInt>(components.size()), program.writeRef(), diagnostics.writeRef())))
-	{
-		PrintDiagnostics(diagnostics);
-		return result;
-	}
-
-	Slang::ComPtr<slang::IComponentType> linkedProgram;
-	diagnostics = nullptr;
-	if (SLANG_FAILED(program->link(linkedProgram.writeRef(), diagnostics.writeRef())))
-	{
-		PrintDiagnostics(diagnostics);
-		return result;
-	}
-
 	Slang::ComPtr<slang::IBlob> spirv;
 	diagnostics = nullptr;
-	if (SLANG_FAILED(linkedProgram->getTargetCode(0, spirv.writeRef(), diagnostics.writeRef())))
+	if (SLANG_FAILED(module->getTargetCode(0, spirv.writeRef(), diagnostics.writeRef())))
 	{
 		PrintDiagnostics(diagnostics);
 		return result;

@@ -9,7 +9,7 @@
 class Shader
 {
 public:
-	void Initialize(const std::filesystem::path& filePath);
+	void Load(const std::filesystem::path& filePath);
 	void Shutdown();
 	void Reload();
 

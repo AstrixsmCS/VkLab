@@ -22,48 +22,108 @@ enum class Format : uint8_t
 {
 	Invalid = 0,
 
-	R_UN8,
-	R_UI16,
-	R_UI32,
-	R_UN16,
-	R_F16,
-	R_F32,
+	// 8-bit
+	R8_UNorm,
+	R8_SNorm,
+	R8_UInt,
+	R8_SInt,
 
-	A_UN8,
+	RG8_UNorm,
+	RG8_SNorm,
+	RG8_UInt,
+	RG8_SInt,
 
-	RG_UN8,
-	RG_UI16,
-	RG_UI32,
-	RG_UN16,
-	RG_F16,
-	RG_F32,
+	RGBA8_UNorm,
+	RGBA8_SNorm,
+	RGBA8_UInt,
+	RGBA8_SInt,
+	RGBA8_SRGB,
 
-	RGBA_UN8,
-	RGBA_UI32,
-	RGBA_F16,
-	RGBA_F32,
-	RGBA_SRGB8,
+	BGRA8_UNorm,
+	BGRA8_SRGB,
 
-	BGRA_UN8,
-	BGRA_SRGB8,
+	// 16-bit
+	R16_UNorm,
+	R16_SNorm,
+	R16_UInt,
+	R16_SInt,
+	R16_Float,
 
-	A2B10G10R10_UN,
-	A2R10G10B10_UN,
-	A1B5G5R5_UN,
+	RG16_UNorm,
+	RG16_SNorm,
+	RG16_UInt,
+	RG16_SInt,
+	RG16_Float,
 
-	ETC2_RGB8,
-	ETC2_SRGB8,
-	BC7_RGBA,
-	BC7_SRGBA,
+	RGBA16_UNorm,
+	RGBA16_SNorm,
+	RGBA16_UInt,
+	RGBA16_SInt,
+	RGBA16_Float,
 
-	D32_Float_S8_UInt,
-	D32_Float,
-	D24_UNorm_S8_UInt,
-	D16_UNorm_S8_UInt,
+	// 32-bit
+	R32_UInt,
+	R32_SInt,
+	R32_Float,
+
+	RG32_UInt,
+	RG32_SInt,
+	RG32_Float,
+
+	RGB32_UInt,
+	RGB32_SInt,
+	RGB32_Float,
+
+	RGBA32_UInt,
+	RGBA32_SInt,
+	RGBA32_Float,
+
+	// Packed
+	RGB10A2_UNorm,
+	BGR10A2_UNorm,
+	R11G11B10_UFloat,
+	RGB9E5_UFloat,
+
+	// Depth / Stencil
 	D16_UNorm,
+	D24_UNorm_S8_UInt,
+	D32_Float,
+	D32_Float_S8_UInt,
+	S8_UInt,
 
+	// BC
+	BC1_RGB_UNorm,
+	BC1_RGB_SRGB,
+	BC1_RGBA_UNorm,
+	BC1_RGBA_SRGB,
+
+	BC2_RGBA_UNorm,
+	BC2_RGBA_SRGB,
+
+	BC3_RGBA_UNorm,
+	BC3_RGBA_SRGB,
+
+	BC4_R_UNorm,
+	BC4_R_SNorm,
+
+	BC5_RG_UNorm,
+	BC5_RG_SNorm,
+
+	BC6H_RGB_UFloat,
+	BC6H_RGB_SFloat,
+
+	BC7_RGBA_UNorm,
+	BC7_RGBA_SRGB,
+
+	// ETC2
+	ETC2_RGB8_UNorm,
+	ETC2_RGB8_SRGB,
+	ETC2_RGBA8_UNorm,
+	ETC2_RGBA8_SRGB,
+
+	// YUV / Video
 	YUV_NV12,
-	YUV_420p
+	YUV_420P
 };
 
 enum class PolygonMode : uint8_t

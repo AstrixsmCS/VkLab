@@ -135,7 +135,7 @@ bool Application::CreateShader()
 {
 	m_Shader = std::make_shared<Shader>();
 
-	m_Shader->Initialize("Resources/Shaders/Triangle.slang");
+	m_Shader->Load("Resources/Shaders/Triangle.slang");
 
 	return m_Shader->IsValid();
 }
