@@ -36,7 +36,6 @@ void Pipeline::Create(const PipelineSpecification &specification)
 	VkPipelineRenderingCreateInfo renderingInfo
 	{
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-		.viewMask = 0,
 		.colorAttachmentCount = static_cast<uint32_t>(colorFormats.size()),
 		.pColorAttachmentFormats = colorFormats.empty() ? nullptr : colorFormats.data(),
 		.depthAttachmentFormat = m_Specification.DepthFormat != Format::Invalid ? ToVulkan(m_Specification.DepthFormat) : VK_FORMAT_UNDEFINED,
@@ -50,7 +49,6 @@ void Pipeline::Create(const PipelineSpecification &specification)
 	VkPipelineVertexInputStateCreateInfo vertexInputInfo
 	{
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-		.flags = 0,
 		.vertexBindingDescriptionCount = static_cast<uint32_t>(m_Specification.BindingDescriptions.size()),
 		.pVertexBindingDescriptions = m_Specification.BindingDescriptions.empty() ? nullptr : m_Specification.BindingDescriptions.data(),
 		.vertexAttributeDescriptionCount = static_cast<uint32_t>(m_Specification.AttributeDescriptions.size()),
@@ -64,7 +62,6 @@ void Pipeline::Create(const PipelineSpecification &specification)
 	VkPipelineInputAssemblyStateCreateInfo inputAssemblyInfo
 	{
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-		.flags = 0,
 		.topology = ToVulkan(m_Specification.Topology),
 		.primitiveRestartEnable = VK_FALSE
 	};
@@ -76,7 +73,6 @@ void Pipeline::Create(const PipelineSpecification &specification)
 	VkPipelineViewportStateCreateInfo viewportInfo
 	{
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-		.flags = 0,
 		.viewportCount = 1,
 		.scissorCount = 1
 	};
@@ -88,7 +84,6 @@ void Pipeline::Create(const PipelineSpecification &specification)
 	VkPipelineRasterizationStateCreateInfo rasterizationInfo
 	{
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-		.flags = 0,
 		.depthClampEnable = VK_FALSE,
 		.rasterizerDiscardEnable = VK_FALSE,
 		.polygonMode = ToVulkan(m_Specification.PolygonMode),
@@ -105,7 +100,6 @@ void Pipeline::Create(const PipelineSpecification &specification)
 	VkPipelineMultisampleStateCreateInfo multisampleInfo
 	{
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-		.flags = 0,
 		.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
 		.sampleShadingEnable = VK_FALSE
 	};
@@ -117,7 +111,6 @@ void Pipeline::Create(const PipelineSpecification &specification)
 	VkPipelineDepthStencilStateCreateInfo depthStencilInfo
 	{
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-		.flags = 0,
 		.depthTestEnable = m_Specification.DepthTest ? VK_TRUE : VK_FALSE,
 		.depthWriteEnable = m_Specification.DepthWrite ? VK_TRUE : VK_FALSE,
 		.depthCompareOp = ToVulkan(m_Specification.DepthCompareOp),
@@ -167,7 +160,6 @@ void Pipeline::Create(const PipelineSpecification &specification)
 	VkPipelineColorBlendStateCreateInfo blendInfo
 	{
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-		.flags = 0,
 		.logicOpEnable = VK_FALSE,
 		.attachmentCount = static_cast<uint32_t>(blendAttachments.size()),
 		.pAttachments = blendAttachments.empty() ? nullptr : blendAttachments.data()
@@ -186,7 +178,6 @@ void Pipeline::Create(const PipelineSpecification &specification)
 	VkPipelineDynamicStateCreateInfo dynamicStateInfo
 	{
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-		.flags = 0,
 		.dynamicStateCount = static_cast<uint32_t>(std::size(dynamicStates)),
 		.pDynamicStates = dynamicStates
 	};
@@ -199,7 +190,6 @@ void Pipeline::Create(const PipelineSpecification &specification)
 	{
 		.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
 		.pNext = &renderingInfo,
-		.flags = 0,
 		.stageCount = static_cast<uint32_t>(shaderStages.size()),
 		.pStages = shaderStages.data(),
 		.pVertexInputState = &vertexInputInfo,
@@ -231,7 +221,6 @@ void Pipeline::CreatePipelineLayout()
 	VkPipelineLayoutCreateInfo layoutInfo
 	{
 		.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-		.flags                  = 0,
 		.setLayoutCount         = 0,
 		.pSetLayouts            = nullptr,
 		.pushConstantRangeCount = 0,

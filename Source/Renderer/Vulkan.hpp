@@ -177,12 +177,16 @@ VulkanCheckResult(res, __FILE__, __LINE__);\
 
 inline static void SetDebugUtilsObjectName(const VkDevice device, const VkObjectType objectType, const std::string& name, const void* handle)
 {
-	VkDebugUtilsObjectNameInfoEXT nameInfo;
-	nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
-	nameInfo.objectType = objectType;
-	nameInfo.pObjectName = name.c_str();
-	nameInfo.objectHandle = reinterpret_cast<uint64_t>(handle);
-	nameInfo.pNext = VK_NULL_HANDLE;
+	if (!vkSetDebugUtilsObjectNameEXT)
+		return;
+
+	const VkDebugUtilsObjectNameInfoEXT nameInfo
+	{
+		.sType        = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
+		.objectType   = objectType,
+		.objectHandle = reinterpret_cast<uint64_t>(handle),
+		.pObjectName  = name.c_str(),
+	};
 
 	VK_CHECK(vkSetDebugUtilsObjectNameEXT(device, &nameInfo));
 }

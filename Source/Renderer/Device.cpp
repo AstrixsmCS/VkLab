@@ -197,7 +197,6 @@ void LogicalDevice::Create(const PhysicalDevice& physicalDevice)
 	{
 		.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
 		.pNext = &features,
-		.flags = 0,
 		.queueCreateInfoCount = static_cast<uint32_t>(physicalDevice.m_QueueCreateInfos.size()),
 		.pQueueCreateInfos = physicalDevice.m_QueueCreateInfos.data(),
 		.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size()),

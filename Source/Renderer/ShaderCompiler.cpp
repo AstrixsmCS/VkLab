@@ -33,7 +33,7 @@ namespace
 		{
 			{
 				slang::CompilerOptionName::DebugInformation,
-				{ slang::CompilerOptionValueKind::Int, SLANG_DEBUG_INFO_LEVEL_STANDARD, 0, nullptr, nullptr }
+				{ slang::CompilerOptionValueKind::Int, SLANG_DEBUG_INFO_LEVEL_NONE, 0, nullptr, nullptr }
 			},
 			{
 				slang::CompilerOptionName::Optimization,
