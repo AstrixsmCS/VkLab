@@ -167,7 +167,7 @@ bool Application::CreateGraphicsPipeline()
 
 	PipelineSpecification spec;
 	spec.Shader               = m_Shader;
-	spec.ColorFormats         = { Format::BGRA_UN8 };
+	spec.ColorFormats         = { Format::BGRA8_UNorm };
 	spec.DepthFormat          = Format::D32_Float;
 	spec.DepthTest            = true;
 	spec.DepthWrite           = true;
@@ -313,7 +313,7 @@ void Application::Render()
 	AttachmentInfo colorAttachment
 	{
 		.ImageView = m_SwapChain.GetCurrentImageView(),
-		.Format = Format::BGRA_UN8,
+		.Format = Format::BGRA8_UNorm,
 		.LoadOp = LoadOp::Clear,
 		.StoreOp = StoreOp::Store,
 		.ClearValue =

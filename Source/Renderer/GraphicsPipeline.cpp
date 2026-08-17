@@ -137,11 +137,16 @@ void Pipeline::Create(const PipelineSpecification &specification)
 		const Format format = m_Specification.ColorFormats[i];
 
 		const bool integerFormat =
-			format == Format::R_UI16 ||
-			format == Format::R_UI32 ||
-			format == Format::RG_UI16 ||
-			format == Format::RG_UI32 ||
-			format == Format::RGBA_UI32;
+			format == Format::R8_UInt ||
+			format == Format::RG8_UInt ||
+			format == Format::RGBA8_UInt ||
+			format == Format::R16_UInt ||
+			format == Format::RG16_UInt ||
+			format == Format::RGBA16_UInt ||
+			format == Format::R32_UInt ||
+			format == Format::RG32_UInt ||
+			format == Format::RGB32_UInt ||
+			format == Format::RGBA32_UInt;
 
 		attachment.blendEnable = (m_Specification.BlendEnabled && !integerFormat) ? VK_TRUE : VK_FALSE;
 
