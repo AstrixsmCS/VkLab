@@ -70,7 +70,7 @@ private:
 	std::shared_ptr<Shader> m_Shader;
 
 	// Geometry
-	Buffer m_VertexBuffer;
+	VertexBuffer m_VertexBuffer;
 
 	// Synchronization
 	TimelineSemaphore                             m_TimelineSemaphore;

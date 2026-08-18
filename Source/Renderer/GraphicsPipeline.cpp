@@ -2,6 +2,40 @@
 
 #include "RendererContext.hpp"
 
+static VkFormat ShaderDataTypeToVulkanFormat(ShaderDataType type)
+{
+	switch (type)
+	{
+		case ShaderDataType::Float:  return VK_FORMAT_R32_SFLOAT;
+		case ShaderDataType::Float2: return VK_FORMAT_R32G32_SFLOAT;
+		case ShaderDataType::Float3: return VK_FORMAT_R32G32B32_SFLOAT;
+		case ShaderDataType::Float4: return VK_FORMAT_R32G32B32A32_SFLOAT;
+
+		case ShaderDataType::Int:    return VK_FORMAT_R32_SINT;
+		case ShaderDataType::Int2:   return VK_FORMAT_R32G32_SINT;
+		case ShaderDataType::Int3:   return VK_FORMAT_R32G32B32_SINT;
+		case ShaderDataType::Int4:   return VK_FORMAT_R32G32B32A32_SINT;
+
+		case ShaderDataType::UInt:   return VK_FORMAT_R32_UINT;
+		case ShaderDataType::UInt2:  return VK_FORMAT_R32G32_UINT;
+		case ShaderDataType::UInt3:  return VK_FORMAT_R32G32B32_UINT;
+		case ShaderDataType::UInt4:  return VK_FORMAT_R32G32B32A32_UINT;
+
+		case ShaderDataType::Bool:
+			break;
+
+		case ShaderDataType::Mat3:
+		case ShaderDataType::Mat4:
+			break;
+
+		case ShaderDataType::None:
+			break;
+	}
+
+	assert(false && "Unsupported ShaderDataType!");
+	return VK_FORMAT_UNDEFINED;
+}
+
 void Pipeline::Create(const PipelineSpecification &specification)
 {
 	m_Specification = specification;
@@ -46,13 +80,40 @@ void Pipeline::Create(const PipelineSpecification &specification)
 	// Vertex Input
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+	VertexBufferLayout& vertexLayout = m_Specification.Layout;
+
+	std::vector<VkVertexInputBindingDescription> vertexInputBindingDescriptions;
+
+	if (vertexLayout.GetElementCount())
+	{
+		VkVertexInputBindingDescription& vertexInputBinding = vertexInputBindingDescriptions.emplace_back();
+
+		vertexInputBinding.binding = 0;
+		vertexInputBinding.stride = vertexLayout.GetStride();
+		vertexInputBinding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+	}
+
+	std::vector<VkVertexInputAttributeDescription> vertexInputAttributes(vertexLayout.GetElementCount());
+
+	uint32_t location = 0;
+
+	for (const auto& element : vertexLayout)
+	{
+		vertexInputAttributes[location].binding = 0;
+		vertexInputAttributes[location].location = location;
+		vertexInputAttributes[location].format = ShaderDataTypeToVulkanFormat(element.Type);
+		vertexInputAttributes[location].offset = element.Offset;
+
+		location++;
+	}
+
 	VkPipelineVertexInputStateCreateInfo vertexInputInfo
 	{
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-		.vertexBindingDescriptionCount = static_cast<uint32_t>(m_Specification.BindingDescriptions.size()),
-		.pVertexBindingDescriptions = m_Specification.BindingDescriptions.empty() ? nullptr : m_Specification.BindingDescriptions.data(),
-		.vertexAttributeDescriptionCount = static_cast<uint32_t>(m_Specification.AttributeDescriptions.size()),
-		.pVertexAttributeDescriptions = m_Specification.AttributeDescriptions.empty() ? nullptr : m_Specification.AttributeDescriptions.data()
+		.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexInputBindingDescriptions.size()),
+		.pVertexBindingDescriptions = vertexInputBindingDescriptions.empty() ? nullptr : vertexInputBindingDescriptions.data(),
+		.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexInputAttributes.size()),
+		.pVertexAttributeDescriptions = vertexInputAttributes.empty() ? nullptr : vertexInputAttributes.data()
 	};
 
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

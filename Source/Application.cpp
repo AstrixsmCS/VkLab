@@ -40,7 +40,7 @@ void Application::Shutdown()
 		m_Shader.reset();
 	}
 
-	m_VertexBuffer.Shutdown();
+	m_VertexBuffer.Destroy();
 
 	m_SwapChain.Shutdown();
 
@@ -142,29 +142,6 @@ bool Application::CreateShader()
 
 bool Application::CreateGraphicsPipeline()
 {
-	VkVertexInputBindingDescription bindingDesc
-	{
-		.binding   = 0,
-		.stride    = sizeof(Vertex),
-		.inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
-	};
-
-	VkVertexInputAttributeDescription attributeDescs[]
-	{
-		{
-			.location = 0,
-			.binding  = 0,
-			.format   = VK_FORMAT_R32G32B32_SFLOAT,
-			.offset   = offsetof(Vertex, Position),
-		},
-		{
-			.location = 1,
-			.binding  = 0,
-			.format   = VK_FORMAT_R32G32B32_SFLOAT,
-			.offset   = offsetof(Vertex, Color),
-		},
-	};
-
 	PipelineSpecification spec;
 	spec.Shader               = m_Shader;
 	spec.ColorFormats         = { Format::BGRA8_UNorm };
@@ -177,36 +154,28 @@ bool Application::CreateGraphicsPipeline()
 	spec.Topology             = Topology::Triangle;
 	spec.PolygonMode          = PolygonMode::Fill;
 	spec.BlendEnabled         = false;
-	spec.BindingDescriptions  = { bindingDesc };
-	spec.AttributeDescriptions = { std::begin(attributeDescs), std::end(attributeDescs) };
+	spec.Layout         =
+	{
+		{ ShaderDataType::Float3, "Position" },
+		{ ShaderDataType::Float3, "Color"    },
+	};
 	spec.DebugName            = "Triangle Pipeline";
 
 	m_Pipeline.Create(spec);
 
 	return m_Pipeline.GetPipeline() != VK_NULL_HANDLE;
-
 }
 
 bool Application::CreateVertexBuffer()
 {
 	const Vertex vertices[]
 	{
-		{ {  0.0f, -0.5f, 0.0f }, { 1.0f, 0.0f, 0.0f } }, // top    — red
-		{ {  0.5f,  0.5f, 0.0f }, { 0.0f, 1.0f, 0.0f } }, // bottom right — green
-		{ { -0.5f,  0.5f, 0.0f }, { 0.0f, 0.0f, 1.0f } }, // bottom left  — blue
+		{ {  0.0f, -0.5f, 0.0f }, { 1.0f, 0.0f, 0.0f } },
+		{ {  0.5f,  0.5f, 0.0f }, { 0.0f, 1.0f, 0.0f } },
+		{ { -0.5f,  0.5f, 0.0f }, { 0.0f, 0.0f, 1.0f } },
 	};
 
-	BufferSpecification spec
-	{
-		.Size      = sizeof(vertices),
-		.Usage     = BufferUsage::Vertex,
-		.Memory    = BufferMemory::CPUToGPU,
-		.Mapped    = false,
-		.DebugName = "Triangle Vertex Buffer",
-	};
-
-	m_VertexBuffer.Create(spec);
-	m_VertexBuffer.SetData(vertices, sizeof(vertices));
+	m_VertexBuffer.Create(vertices, sizeof(vertices));
 
 	return m_VertexBuffer.GetBuffer() != VK_NULL_HANDLE;
 }

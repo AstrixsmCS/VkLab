@@ -1,73 +1,63 @@
 #include "Buffer.hpp"
 
-#include "RendererContext.hpp"
-
 #include <cassert>
 #include <cstring>
 
-void Buffer::Create(const BufferSpecification& specification)
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Vertex Buffer
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+void VertexBuffer::Create(uint64_t size, VertexBufferUsage usage)
 {
-	assert(specification.Size > 0);
-	assert(specification.Usage != BufferUsage::None);
+	assert(size > 0);
 
-	m_Specification = specification;
+	m_Size = size;
+	m_Usage = usage;
 
 	VkBufferCreateInfo bufferInfo
 	{
 		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-		.size = specification.Size,
-		.usage = ToVulkanUsage(specification.Usage),
+		.size = size,
+		.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
 		.sharingMode = VK_SHARING_MODE_EXCLUSIVE
 	};
 
-	VmaAllocationCreateInfo allocationInfo{};
-
-	switch (specification.Memory)
+	VmaAllocationCreateInfo allocationInfo
 	{
-		case BufferMemory::GPU:
-		{
-			allocationInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-			break;
-		}
+		.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
+		.usage = VMA_MEMORY_USAGE_AUTO
+	};
 
-		case BufferMemory::CPUToGPU:
-		{
-			allocationInfo.usage = VMA_MEMORY_USAGE_AUTO;
-			allocationInfo.flags |= VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
-
-			break;
-		}
-
-		case BufferMemory::GPUToCPU:
-		{
-			allocationInfo.usage = VMA_MEMORY_USAGE_AUTO;
-			allocationInfo.flags |= VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT;
-
-			break;
-		}
-	}
-
-	if (specification.Mapped)
-	{
-		allocationInfo.flags |= VMA_ALLOCATION_CREATE_MAPPED_BIT;
-	}
-
-	VmaAllocationInfo allocationResult{};
-
-	VK_CHECK(vmaCreateBuffer(Allocator::GetAllocator(), &bufferInfo, &allocationInfo, &m_Buffer, &m_Allocation, &allocationResult));
-
-	if (specification.Mapped)
-	{
-		m_MappedData = allocationResult.pMappedData;
-	}
-
-	if (!specification.DebugName.empty())
-	{
-		SetDebugUtilsObjectName(RendererContext::GetDevice()->GetDevice(), VK_OBJECT_TYPE_BUFFER, specification.DebugName, m_Buffer);
-	}
+	VK_CHECK(vmaCreateBuffer(Allocator::GetAllocator(), &bufferInfo, &allocationInfo, &m_Buffer, &m_Allocation, nullptr));
 }
 
-void Buffer::Shutdown()
+void VertexBuffer::Create(const void* data, uint64_t size, VertexBufferUsage usage)
+{
+	assert(data);
+	assert(size > 0);
+
+	m_Size = size;
+	m_Usage = usage;
+
+	VkBufferCreateInfo bufferInfo
+	{
+		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+		.size = size,
+		.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+		.sharingMode = VK_SHARING_MODE_EXCLUSIVE
+	};
+
+	VmaAllocationCreateInfo allocationInfo
+	{
+		.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
+		.usage = VMA_MEMORY_USAGE_AUTO
+	};
+
+	VK_CHECK(vmaCreateBuffer(Allocator::GetAllocator(), &bufferInfo, &allocationInfo, &m_Buffer, &m_Allocation, nullptr));
+
+	SetData(data, size);
+}
+
+void VertexBuffer::Destroy()
 {
 	if (m_Buffer == VK_NULL_HANDLE)
 		return;
@@ -76,98 +66,90 @@ void Buffer::Shutdown()
 
 	m_Buffer = VK_NULL_HANDLE;
 	m_Allocation = VK_NULL_HANDLE;
-	m_MappedData = nullptr;
 
-	m_Specification = {};
+	m_Size = 0;
+	m_Usage = VertexBufferUsage::None;
+	m_Layout = {};
 }
 
-void Buffer::SetData(const void* data, uint64_t size, uint64_t offset)
+void VertexBuffer::SetData(const void* data, uint64_t size, uint64_t offset)
 {
 	assert(data);
 	assert(size > 0);
-	assert(offset + size <= m_Specification.Size);
+	assert(offset + size <= m_Size);
 
-	void* destination = m_MappedData;
-	bool temporaryMapping = false;
+	void* mappedData = nullptr;
 
-	if (!destination)
-	{
-		VK_CHECK(vmaMapMemory(Allocator::GetAllocator(), m_Allocation, &destination));
+	VK_CHECK(vmaMapMemory(Allocator::GetAllocator(), m_Allocation, &mappedData));
 
-		temporaryMapping = true;
-	}
-
-	std::memcpy(static_cast<uint8_t*>(destination) + offset, data, size);
-
-	if (temporaryMapping)
-	{
-		vmaUnmapMemory(Allocator::GetAllocator(), m_Allocation);
-	}
-}
-
-void* Buffer::Map()
-{
-	if (m_MappedData)
-		return m_MappedData;
-
-	VK_CHECK(vmaMapMemory(Allocator::GetAllocator(), m_Allocation, &m_MappedData));
-
-	return m_MappedData;
-}
-
-void Buffer::Unmap()
-{
-	if (!m_MappedData)
-		return;
-
-	if (m_Specification.Mapped)
-		return;
-
+	std::memcpy(static_cast<uint8_t*>(mappedData) + offset, data, size);
 	vmaUnmapMemory(Allocator::GetAllocator(), m_Allocation);
-
-	m_MappedData = nullptr;
 }
 
-VkDeviceAddress Buffer::GetDeviceAddress() const
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Index Buffer
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+void IndexBuffer::Create(uint64_t size)
 {
-	assert(HasFlag(m_Specification.Usage, BufferUsage::DeviceAddress));
+	assert(size > 0);
 
-	VkBufferDeviceAddressInfo addressInfo
+	m_Size = size;
+
+	VkBufferCreateInfo bufferInfo
 	{
-		.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
-		.buffer = m_Buffer
+		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+		.size = size,
+		.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+		.sharingMode = VK_SHARING_MODE_EXCLUSIVE
 	};
 
-	return vkGetBufferDeviceAddress(RendererContext::GetDevice()->GetDevice(), &addressInfo);
+	VmaAllocationCreateInfo allocationInfo
+	{
+		.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
+		.usage = VMA_MEMORY_USAGE_AUTO
+	};
+
+	VK_CHECK(vmaCreateBuffer(Allocator::GetAllocator(), &bufferInfo, &allocationInfo, &m_Buffer, &m_Allocation, nullptr));
 }
 
-VkBufferUsageFlags Buffer::ToVulkanUsage(BufferUsage usage)
+void IndexBuffer::Create(const void* data, uint64_t size)
 {
-	VkBufferUsageFlags flags = 0;
+	assert(data);
+	assert(size > 0);
 
-	if (HasFlag(usage, BufferUsage::TransferSrc))
-		flags |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+	m_Size = size;
 
-	if (HasFlag(usage, BufferUsage::TransferDst))
-		flags |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+	VkBufferCreateInfo bufferInfo
+	{
+		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+		.size = size,
+		.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+		.sharingMode = VK_SHARING_MODE_EXCLUSIVE
+	};
 
-	if (HasFlag(usage, BufferUsage::Vertex))
-		flags |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+	VmaAllocationCreateInfo allocationInfo
+	{
+		.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
+		.usage = VMA_MEMORY_USAGE_AUTO
+	};
 
-	if (HasFlag(usage, BufferUsage::Index))
-		flags |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+	VK_CHECK(vmaCreateBuffer(Allocator::GetAllocator(), &bufferInfo, &allocationInfo, &m_Buffer, &m_Allocation, nullptr));
 
-	if (HasFlag(usage, BufferUsage::Uniform))
-		flags |= VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+	void* mapped = nullptr;
+	VK_CHECK(vmaMapMemory(Allocator::GetAllocator(), m_Allocation, &mapped));
+	std::memcpy(mapped, data, size);
+	vmaUnmapMemory(Allocator::GetAllocator(), m_Allocation);
+}
 
-	if (HasFlag(usage, BufferUsage::Storage))
-		flags |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+void IndexBuffer::Destroy()
+{
+	if (m_Buffer == VK_NULL_HANDLE)
+		return;
 
-	if (HasFlag(usage, BufferUsage::Indirect))
-		flags |= VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
+	vmaDestroyBuffer(Allocator::GetAllocator(), m_Buffer, m_Allocation);
 
-	if (HasFlag(usage, BufferUsage::DeviceAddress))
-		flags |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+	m_Buffer = VK_NULL_HANDLE;
+	m_Allocation = VK_NULL_HANDLE;
 
-	return flags;
+	m_Size = 0;
 }

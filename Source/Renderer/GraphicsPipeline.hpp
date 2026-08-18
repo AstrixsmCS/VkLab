@@ -2,6 +2,7 @@
 
 #include "Vulkan.hpp"
 #include "Shader.hpp"
+#include "Buffer.hpp"
 
 struct PipelineSpecification
 {
@@ -17,8 +18,7 @@ struct PipelineSpecification
 	BlendFactor SrcColorBlendFactor = BlendFactor::SrcAlpha;
 	BlendFactor DstColorBlendFactor = BlendFactor::OneMinusSrcAlpha;
 
-	std::vector<VkVertexInputBindingDescription> BindingDescriptions;
-	std::vector<VkVertexInputAttributeDescription> AttributeDescriptions;
+	VertexBufferLayout Layout;
 
 	CullMode CullMode = CullMode::Back;
 	WindingMode FrontFace = WindingMode::CCW;
