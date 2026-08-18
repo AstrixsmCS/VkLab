@@ -2,12 +2,11 @@
 
 #include "RendererContext.hpp"
 
-#include "../Application.hpp"
-
 void Renderer::Initialize()
 {
 	m_FrameTimeline.Initialize(MAX_FRAMES_IN_FLIGHT);
 	CreateSyncObjects();
+	m_FrameCommandBuffer.Create(MAX_FRAMES_IN_FLIGHT, "Frame Command Buffer");
 }
 
 void Renderer::CreateSyncObjects()
@@ -49,23 +48,84 @@ void Renderer::DestroySyncObjects()
 	m_RenderFinishedSemaphores.clear();
 }
 
-void Renderer::BeginFrame()
+bool Renderer::BeginFrame()
 {
 	m_CurrentSignalValue = m_NextSignalValue++;
 
 	const uint64_t waitValue = m_CurrentSignalValue - MAX_FRAMES_IN_FLIGHT;
 
 	m_FrameTimeline.Wait(waitValue);
+
+	m_CurrentImageIndex = m_SwapChain->AcquireNextImage(GetImageAvailableSemaphore());
+
+	if (m_CurrentImageIndex == UINT32_MAX)
+	{
+		m_CurrentImageIndex = UINT32_MAX;
+		return false;
+	}
+
+	m_FrameCommandBuffer.Reset();
+	m_FrameCommandBuffer.Begin();
+
+	return true;
 }
 
 void Renderer::EndFrame()
 {
-	m_CurrentFrameIndex = (m_CurrentFrameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
+	m_FrameCommandBuffer.End();
+
+	const VkSemaphoreSubmitInfo imageAvailableWait
+	{
+		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+		.semaphore = GetImageAvailableSemaphore(),
+		.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+	};
+
+	const VkSemaphoreSubmitInfo signalInfos[]
+	{
+		{
+			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+			.semaphore = GetRenderFinishedSemaphore(m_CurrentImageIndex),
+			.stageMask = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT,
+		},
+		{
+			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+			.semaphore = m_FrameTimeline.GetHandle(),
+			.value = m_CurrentSignalValue,
+			.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+		},
+	};
+
+	const VkCommandBufferSubmitInfo commandBufferInfo
+	{
+		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+		.commandBuffer = m_FrameCommandBuffer.GetCommandBuffer(s_CurrentFrameIndex),
+	};
+
+	const VkSubmitInfo2 submitInfo
+	{
+		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+
+		.waitSemaphoreInfoCount = 1,
+		.pWaitSemaphoreInfos = &imageAvailableWait,
+
+		.commandBufferInfoCount = 1,
+		.pCommandBufferInfos = &commandBufferInfo,
+
+		.signalSemaphoreInfoCount = 2,
+		.pSignalSemaphoreInfos = signalInfos,
+	};
+
+	VK_CHECK(vkQueueSubmit2(RendererContext::GetDevice()->GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE));
+
+	s_CurrentFrameIndex = (s_CurrentFrameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
 void Renderer::Shutdown()
 {
 	vkDeviceWaitIdle(RendererContext::GetDevice()->GetDevice());
+
+	m_FrameCommandBuffer.Destroy();
 
 	DestroySyncObjects();
 

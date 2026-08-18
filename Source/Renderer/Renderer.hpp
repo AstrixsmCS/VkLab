@@ -3,6 +3,7 @@
 #include "Vulkan.hpp"
 #include "SwapChain.hpp"
 #include "TimelineSemaphore.hpp"
+#include "CommandBuffer.hpp"
 
 #include <vector>
 
@@ -12,25 +13,28 @@ public:
 	void Initialize();
 	void Shutdown();
 
-	void BeginFrame();
+	bool BeginFrame();
 	void EndFrame();
 
-	VkSemaphore GetImageAvailableSemaphore() const { return m_ImageAvailableSemaphores[m_CurrentFrameIndex]; }
+	VkSemaphore GetImageAvailableSemaphore() const { return m_ImageAvailableSemaphores[s_CurrentFrameIndex]; }
 	VkSemaphore GetRenderFinishedSemaphore(uint32_t imageIndex) const { return m_RenderFinishedSemaphores[imageIndex]; }
 
-	uint32_t GetCurrentFrameIndex() const { return m_CurrentFrameIndex; }
+	static uint32_t GetCurrentFrameIndex() { return s_CurrentFrameIndex; }
+	uint32_t GetCurrentImageIndex() const { return m_CurrentImageIndex; }
 
-	VkSemaphore GetFrameTimeline() const { return m_FrameTimeline.GetHandle(); }
-	uint64_t GetCurrentSignalValue() const { return m_CurrentSignalValue; }
+	VkCommandBuffer GetCurrentCommandBuffer() const { return m_FrameCommandBuffer.GetActiveCommandBuffer(); }
+
+	static constexpr uint32_t  MAX_FRAMES_IN_FLIGHT = 3;
+	static constexpr uint32_t GetFramesInFlight() { return MAX_FRAMES_IN_FLIGHT; }
 
 	void SetSwapChain(SwapChain* swapChain) { m_SwapChain = swapChain; }
 private:
 	void CreateSyncObjects();
 	void DestroySyncObjects();
 private:
-	static constexpr uint32_t  MAX_FRAMES_IN_FLIGHT = 3;
-
 	SwapChain* m_SwapChain = nullptr;
+
+	CommandBuffer m_FrameCommandBuffer;
 
 	std::vector<VkSemaphore> m_ImageAvailableSemaphores;
 	std::vector<VkSemaphore> m_RenderFinishedSemaphores;
@@ -39,5 +43,7 @@ private:
 	uint64_t m_NextSignalValue = MAX_FRAMES_IN_FLIGHT + 1;
 	uint64_t m_CurrentSignalValue = 0;
 
-	uint32_t m_CurrentFrameIndex = 0;
+	uint32_t m_CurrentImageIndex = UINT32_MAX;
+
+	static inline uint32_t s_CurrentFrameIndex = 0;
 };

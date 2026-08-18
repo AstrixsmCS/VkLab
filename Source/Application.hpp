@@ -16,12 +16,6 @@
 
 struct SDL_Window;
 
-struct FrameResources
-{
-	VkCommandPool   commandPool            = VK_NULL_HANDLE;
-	VkCommandBuffer commandBuffer          = VK_NULL_HANDLE;
-};
-
 struct Vertex
 {
 	float Position[3];
@@ -41,7 +35,6 @@ private:
 	bool           CreateShader();
 	bool           CreateGraphicsPipeline();
 	bool           CreateGeometry();
-	bool           CreateCommandBuffers();
 	void           Render();
 private:
 	static constexpr uint32_t MaxFramesInFlight = 3;
@@ -72,9 +65,6 @@ private:
 	// Geometry
 	VertexBuffer m_VertexBuffer;
 	IndexBuffer  m_IndexBuffer;
-
-	// Synchronization
-	std::array<FrameResources, MaxFramesInFlight> m_FrameResources;
 
 	void InsertImageMemoryBarrier(
 			VkCommandBuffer cmdbuffer,

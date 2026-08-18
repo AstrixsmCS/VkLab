@@ -27,9 +27,6 @@ void Application::Shutdown()
 {
 	vkDeviceWaitIdle(m_LogicalDevice.GetDevice());
 
-	for (auto& res : m_FrameResources)
-		vkDestroyCommandPool(m_LogicalDevice.GetDevice(), res.commandPool, nullptr);
-
 	m_Pipeline.Shutdown();
 
 	if (m_Shader)
@@ -120,12 +117,6 @@ bool Application::InitializeVulkan()
 		return false;
 	}
 
-	if (!CreateCommandBuffers())
-	{
-		ShowError("Couldn't create command buffer objects.");
-		return false;
-	}
-
 	return true;
 }
 
@@ -155,7 +146,7 @@ bool Application::CreateGraphicsPipeline()
 		{ ShaderDataType::Float3, "Position" },
 		{ ShaderDataType::Float3, "Color"    },
 	};
-	spec.DebugName            = "Triangle Pipeline";
+	spec.DebugName            = "Quad Pipeline";
 
 	m_Pipeline.Create(spec);
 
@@ -184,67 +175,16 @@ bool Application::CreateGeometry()
 	return m_VertexBuffer.GetBuffer() != VK_NULL_HANDLE && m_IndexBuffer.GetBuffer()  != VK_NULL_HANDLE;
 }
 
-bool Application::CreateCommandBuffers()
-{
-	for (auto& res : m_FrameResources)
-	{
-		VkCommandPoolCreateInfo poolInfo
-		{
-			.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-			.queueFamilyIndex = static_cast<uint32_t>(m_PhysicalDevice->GetQueueFamilyIndices().Graphics),
-		};
-
-		if (vkCreateCommandPool(m_LogicalDevice.GetDevice(), &poolInfo, nullptr, &res.commandPool) != VK_SUCCESS)
-		{
-			ShowError("Unable to create command pool.");
-			return false;
-		}
-
-		VkCommandBufferAllocateInfo allocInfo
-		{
-			.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-			.commandPool        = res.commandPool,
-			.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-			.commandBufferCount = 1,
-		};
-
-		if (vkAllocateCommandBuffers(m_LogicalDevice.GetDevice(), &allocInfo, &res.commandBuffer) != VK_SUCCESS)
-		{
-			ShowError("Unable to allocate command buffer.");
-			return false;
-		}
-	}
-
-	return true;
-}
-
 void Application::Render()
 {
-	m_Renderer.BeginFrame();
-
-	const uint32_t frameResIndex = m_FrameIndex++ % MaxFramesInFlight;
-
-	FrameResources& res = m_FrameResources[frameResIndex];
-	vkResetCommandPool(m_LogicalDevice.GetDevice(), res.commandPool, 0);
-
-	const uint32_t imageIndex = m_SwapChain.AcquireNextImage(m_Renderer.GetImageAvailableSemaphore());
-	if (imageIndex == UINT32_MAX)
-	{
-		m_Renderer.EndFrame();
+	if (!m_Renderer.BeginFrame())
 		return;
-	}
 
+	VkCommandBuffer cmd = m_Renderer.GetCurrentCommandBuffer();
 	const VkExtent2D extent = m_SwapChain.GetExtent();
 
-	VkCommandBufferBeginInfo beginInfo
-	{
-		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-		.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-	};
-	vkBeginCommandBuffer(res.commandBuffer, &beginInfo);
-
 	SetImageLayout(
-		res.commandBuffer,
+		cmd,
 		m_SwapChain.GetCurrentImage(),
 		VK_IMAGE_ASPECT_COLOR_BIT,
 		VK_IMAGE_LAYOUT_UNDEFINED,
@@ -253,7 +193,7 @@ void Application::Render()
 		VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
 
 	SetImageLayout(
-		res.commandBuffer,
+		cmd,
 		m_SwapChain.m_DepthStencil.Image,
 		VK_IMAGE_ASPECT_DEPTH_BIT,
 		VK_IMAGE_LAYOUT_UNDEFINED,
@@ -291,26 +231,26 @@ void Application::Render()
 		.LayerCount       = 1
 	};
 
-	DynamicRendering::BeginRendering(res.commandBuffer, renderPassInfo);
+	DynamicRendering::BeginRendering(cmd, renderPassInfo);
 	{
 		VkViewport viewport{ .x = 0, .y = 0, .width = static_cast<float>(extent.width), .height = static_cast<float>(extent.height), .minDepth = 0.0f, .maxDepth = 1.0f };
-		vkCmdSetViewport(res.commandBuffer, 0, 1, &viewport);
+		vkCmdSetViewport(cmd, 0, 1, &viewport);
 
 		VkRect2D scissor{ .offset = { 0, 0 }, .extent = extent };
-		vkCmdSetScissor(res.commandBuffer, 0, 1, &scissor);
+		vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-		m_Pipeline.Bind(res.commandBuffer);
+		m_Pipeline.Bind(cmd);
 
 		const VkBuffer     vertexBuffers[] = { m_VertexBuffer.GetBuffer() };
 		const VkDeviceSize offsets[]       = { 0 };
-		vkCmdBindVertexBuffers(res.commandBuffer, 0, 1, vertexBuffers, offsets);
-		vkCmdBindIndexBuffer(res.commandBuffer, m_IndexBuffer.GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
-		vkCmdDrawIndexed(res.commandBuffer, m_IndexBuffer.GetCount(), 1, 0, 0, 0);
+		vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
+		vkCmdBindIndexBuffer(cmd, m_IndexBuffer.GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
+		vkCmdDrawIndexed(cmd, m_IndexBuffer.GetCount(), 1, 0, 0, 0);
 	}
-	DynamicRendering::EndRendering(res.commandBuffer);
+	DynamicRendering::EndRendering(cmd);
 
 	SetImageLayout(
-		res.commandBuffer,
+		cmd,
 		m_SwapChain.GetCurrentImage(),
 		VK_IMAGE_ASPECT_COLOR_BIT,
 		VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
@@ -318,52 +258,8 @@ void Application::Render()
 		VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
 		VK_PIPELINE_STAGE_2_NONE);
 
-	vkEndCommandBuffer(res.commandBuffer);
-
-	const VkSemaphoreSubmitInfo signalInfos[]
-	{
-		{
-			.sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-			.semaphore = m_Renderer.GetRenderFinishedSemaphore(imageIndex),
-			.stageMask = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT,
-		},
-		{
-			.sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-			.semaphore = m_Renderer.GetFrameTimeline(),
-			.value     = m_Renderer.GetCurrentSignalValue(),
-			.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-		},
-	};
-
-	const VkSemaphoreSubmitInfo acquireWait
-	{
-		.sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-		.semaphore = m_Renderer.GetImageAvailableSemaphore(),
-		.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-	};
-
-	const VkCommandBufferSubmitInfo cmdSubmit
-	{
-		.sType         = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
-		.commandBuffer = res.commandBuffer,
-	};
-
-	const VkSubmitInfo2 submitInfo
-	{
-		.sType                    = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
-		.waitSemaphoreInfoCount   = 1,
-		.pWaitSemaphoreInfos      = &acquireWait,
-		.commandBufferInfoCount   = 1,
-		.pCommandBufferInfos      = &cmdSubmit,
-		.signalSemaphoreInfoCount = 2,
-		.pSignalSemaphoreInfos    = signalInfos,
-	};
-
-	vkQueueSubmit2(m_LogicalDevice.GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE);
-
-	m_SwapChain.Present(m_Renderer.GetRenderFinishedSemaphore(imageIndex));
-
 	m_Renderer.EndFrame();
+	m_SwapChain.Present(m_Renderer.GetRenderFinishedSemaphore(m_Renderer.GetCurrentImageIndex()));
 }
 
 void Application::InsertImageMemoryBarrier(
