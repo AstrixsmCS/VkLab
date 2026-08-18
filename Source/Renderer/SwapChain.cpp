@@ -35,29 +35,11 @@ void SwapChain::Initialize()
 
 void SwapChain::Shutdown()
 {
-	VkDevice device = RendererContext::GetDevice()->GetDevice();
-
 	DestroySwapChain();
-
-	for (VkSemaphore semaphore : m_ImageAvailableSemaphores)
-	{
-		if (semaphore)
-			vkDestroySemaphore(device, semaphore, nullptr);
-	}
-
-	for (VkSemaphore semaphore : m_RenderFinishedSemaphores)
-	{
-		if (semaphore)
-			vkDestroySemaphore(device, semaphore, nullptr);
-	}
-
-	m_ImageAvailableSemaphores.clear();
-	m_RenderFinishedSemaphores.clear();
 
 	if (m_Surface)
 	{
 		vkDestroySurfaceKHR(RendererContext::GetInstance(), m_Surface, nullptr);
-
 		m_Surface = VK_NULL_HANDLE;
 	}
 }
@@ -76,7 +58,7 @@ void SwapChain::OnResize(uint32_t width, uint32_t height)
 	m_NeedsResize = false;
 }
 
-uint32_t SwapChain::AcquireNextImage()
+uint32_t SwapChain::AcquireNextImage(VkSemaphore signalSemaphore)
 {
 	// Consume a deferred rebuild requested by Present().
 	if (m_NeedsResize)
@@ -96,14 +78,7 @@ uint32_t SwapChain::AcquireNextImage()
 		return UINT32_MAX;
 	}
 
-	VkResult result = vkAcquireNextImageKHR(
-		RendererContext::GetDevice()->GetDevice(),
-		m_SwapChain,
-		UINT64_MAX,
-		m_ImageAvailableSemaphores[m_CurrentFrameIndex],
-		VK_NULL_HANDLE,
-		&m_CurrentImageIndex
-	);
+	VkResult result = vkAcquireNextImageKHR(RendererContext::GetDevice()->GetDevice(), m_SwapChain, UINT64_MAX, signalSemaphore, VK_NULL_HANDLE, &m_CurrentImageIndex);
 
 	if (result == VK_ERROR_OUT_OF_DATE_KHR)
 	{
@@ -129,13 +104,13 @@ uint32_t SwapChain::AcquireNextImage()
 	return m_CurrentImageIndex;
 }
 
-void SwapChain::Present()
+void SwapChain::Present(VkSemaphore waitSemaphore)
 {
 	VkPresentInfoKHR presentInfo
 	{
 		.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
 		.waitSemaphoreCount = 1,
-		.pWaitSemaphores = &m_RenderFinishedSemaphores[m_CurrentImageIndex],
+		.pWaitSemaphores = &waitSemaphore,
 		.swapchainCount = 1,
 		.pSwapchains = &m_SwapChain,
 		.pImageIndices = &m_CurrentImageIndex
@@ -152,8 +127,6 @@ void SwapChain::Present()
 	{
 		VK_CHECK(result);
 	}
-
-	m_CurrentFrameIndex = (m_CurrentFrameIndex + 1) % static_cast<uint32_t>(m_ImageAvailableSemaphores.size());
 }
 
 void SwapChain::CreateSurface()
@@ -351,43 +324,6 @@ void SwapChain::CreateSwapchain(uint32_t* width, uint32_t* height)
 	};
 
 	VK_CHECK(vkCreateImageView(device, &depthViewInfo, nullptr, &m_DepthStencil.ImageView));
-
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// Semaphores
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	constexpr uint32_t framesInFlight = 2;
-
-	VkSemaphoreCreateInfo semaphoreInfo
-	{
-		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
-	};
-
-	if (m_ImageAvailableSemaphores.empty())
-	{
-		m_ImageAvailableSemaphores.resize(framesInFlight);
-
-		for (VkSemaphore& semaphore : m_ImageAvailableSemaphores)
-		{
-			VK_CHECK(vkCreateSemaphore(device,&semaphoreInfo,nullptr,&semaphore));
-		}
-	}
-
-	if (m_RenderFinishedSemaphores.size() != m_Images.size())
-	{
-		for (VkSemaphore semaphore : m_RenderFinishedSemaphores)
-		{
-			if (semaphore)
-				vkDestroySemaphore(device, semaphore, nullptr);
-		}
-
-		m_RenderFinishedSemaphores.clear();
-		m_RenderFinishedSemaphores.resize(m_Images.size());
-
-		for (VkSemaphore& semaphore : m_RenderFinishedSemaphores)
-		{
-			VK_CHECK(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphore));
-		}
-	}
 }
 
 void SwapChain::CreateImageViews()

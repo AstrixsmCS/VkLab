@@ -19,8 +19,8 @@ public:
 
 	void OnResize(uint32_t width, uint32_t height);
 
-	uint32_t AcquireNextImage();
-	void Present();
+	uint32_t AcquireNextImage(VkSemaphore signalSemaphore);
+	void Present(VkSemaphore waitSemaphore);
 
 	uint32_t GetImageCount() const { return static_cast<uint32_t>(m_Images.size()); }
 	VkImage GetImage(uint32_t index) const { return m_Images[index].Image; }
@@ -65,13 +65,6 @@ private:
 	VkColorSpaceKHR m_ColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
 	VkExtent2D m_Extent{};
 
-	// Binary semaphores used for swapchain acquire and presentation.
-	// ImageAvailable is indexed by frame-in-flight.
-	// RenderFinished is indexed by swapchain image.
-	std::vector<VkSemaphore> m_ImageAvailableSemaphores;
-	std::vector<VkSemaphore> m_RenderFinishedSemaphores;
-
-	uint32_t m_CurrentFrameIndex = 0;    // Index of the frame we are currently working on, up to max frames in flight
 	uint32_t m_CurrentImageIndex = 0;    // Index of the current swapchain image.  Can be different from frame index
 
 	bool m_NeedsResize = false;
