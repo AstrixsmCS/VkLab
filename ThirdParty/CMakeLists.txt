@@ -44,3 +44,8 @@ find_library(SLANG_LIB NAMES slang slang.lib
         HINTS "$ENV{VULKAN_SDK}/Lib" REQUIRED)
 target_link_libraries(slang INTERFACE ${SLANG_LIB}
 )
+
+# ==== fastgltf ====
+set(FASTGLTF_COMPILE_AS_CPP20 ON)
+
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/fastgltf SYSTEM)

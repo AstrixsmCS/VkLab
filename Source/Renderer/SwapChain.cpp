@@ -5,9 +5,22 @@
 #include <SDL3/SDL_vulkan.h>
 #include <SDL3/SDL_events.h>
 
+#include <vma/vk_mem_alloc.h>
+
 #include <cassert>
 #include <algorithm>
 #include <print>
+
+SwapChain::SwapChain(SDL_Window* windowHandle)
+		: m_WindowHandle(windowHandle)
+{
+}
+
+SwapChain::~SwapChain()
+{
+	Cleanup();
+	vkDestroySurfaceKHR(RendererContext::Get().GetInstance(), m_Surface, nullptr);
+}
 
 void SwapChain::Initialize()
 {
@@ -31,16 +44,27 @@ void SwapChain::Initialize()
 	uint32_t height = static_cast<uint32_t>(windowHeight);
 
 	CreateSwapchain(&width, &height);
+	CreateImageViews();
 }
 
-void SwapChain::Shutdown()
+void SwapChain::Cleanup()
 {
-	DestroySwapChain();
+	VkDevice device = RendererContext::Get().GetDevice();
 
-	if (m_Surface)
+	for (auto& image : m_Images)
 	{
-		vkDestroySurfaceKHR(RendererContext::GetInstance(), m_Surface, nullptr);
-		m_Surface = VK_NULL_HANDLE;
+		if (image.ImageView)
+		{
+			vkDestroyImageView(device, image.ImageView, nullptr);
+			image.ImageView = VK_NULL_HANDLE;
+		}
+	}
+	m_Images.clear();
+
+	if (m_SwapChain != VK_NULL_HANDLE)
+	{
+		vkDestroySwapchainKHR(device, m_SwapChain, nullptr);
+		m_SwapChain = VK_NULL_HANDLE;
 	}
 }
 
@@ -49,95 +73,23 @@ void SwapChain::OnResize(uint32_t width, uint32_t height)
 	if (width == 0 || height == 0)
 		return;
 
-	vkDeviceWaitIdle(RendererContext::GetDevice()->GetDevice());
-
-	DestroySwapChain();
-
+	vkDeviceWaitIdle(RendererContext::Get().GetDevice());
+	Cleanup();
 	CreateSwapchain(&width, &height);
+	CreateImageViews();
 
 	m_NeedsResize = false;
 }
 
-uint32_t SwapChain::AcquireNextImage(VkSemaphore signalSemaphore)
-{
-	// Consume a deferred rebuild requested by Present().
-	if (m_NeedsResize)
-	{
-		int windowWidth = 0;
-		int windowHeight = 0;
-
-		SDL_GetWindowSizeInPixels(m_WindowHandle, &windowWidth, &windowHeight);
-
-		if (windowWidth > 0 && windowHeight > 0)
-		{
-			OnResize(static_cast<uint32_t>(windowWidth), static_cast<uint32_t>(windowHeight));
-		}
-
-		m_NeedsResize = false;
-
-		return UINT32_MAX;
-	}
-
-	VkResult result = vkAcquireNextImageKHR(RendererContext::GetDevice()->GetDevice(), m_SwapChain, UINT64_MAX, signalSemaphore, VK_NULL_HANDLE, &m_CurrentImageIndex);
-
-	if (result == VK_ERROR_OUT_OF_DATE_KHR)
-	{
-		int windowWidth = 0;
-		int windowHeight = 0;
-
-		SDL_GetWindowSizeInPixels(m_WindowHandle, &windowWidth, &windowHeight);
-
-		if (windowWidth > 0 && windowHeight > 0)
-		{
-			OnResize(static_cast<uint32_t>(windowWidth), static_cast<uint32_t>(windowHeight));
-		}
-
-		return UINT32_MAX;
-	}
-
-	if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
-	{
-		VK_CHECK(result);
-		return UINT32_MAX;
-	}
-
-	return m_CurrentImageIndex;
-}
-
-void SwapChain::Present(VkSemaphore waitSemaphore)
-{
-	VkPresentInfoKHR presentInfo
-	{
-		.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-		.waitSemaphoreCount = 1,
-		.pWaitSemaphores = &waitSemaphore,
-		.swapchainCount = 1,
-		.pSwapchains = &m_SwapChain,
-		.pImageIndices = &m_CurrentImageIndex
-	};
-
-	VkResult result = vkQueuePresentKHR(RendererContext::GetDevice()->GetGraphicsQueue(), &presentInfo);
-
-	// Defer recreation until AcquireNextImage().
-	if (result == VK_ERROR_OUT_OF_DATE_KHR)
-	{
-		m_NeedsResize = true;
-	}
-	else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
-	{
-		VK_CHECK(result);
-	}
-}
-
 void SwapChain::CreateSurface()
 {
-	VkPhysicalDevice physicalDevice = RendererContext::GetPhysicalDevice()->GetPhysicalDevice();
+	VkPhysicalDevice physicalDevice = RendererContext::Get().GetPhysicalDevice();
 
-	SDL_Vulkan_CreateSurface(m_WindowHandle, RendererContext::GetInstance(), nullptr, &m_Surface);
+	SDL_Vulkan_CreateSurface(m_WindowHandle, RendererContext::Get().GetInstance(), nullptr, &m_Surface);
 
 	VkBool32 presentSupport = VK_FALSE;
 
-	VK_CHECK(vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, static_cast<uint32_t>(RendererContext::GetPhysicalDevice()->GetQueueFamilyIndices().Graphics), m_Surface, &presentSupport));
+	VK_CHECK(vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, static_cast<uint32_t>(RendererContext::Get().GetGraphicsFamily()), m_Surface, &presentSupport));
 
 	assert(presentSupport && "Graphics queue family does not support presentation on this surface!");
 
@@ -146,8 +98,8 @@ void SwapChain::CreateSurface()
 
 void SwapChain::CreateSwapchain(uint32_t* width, uint32_t* height)
 {
-	VkPhysicalDevice physicalDevice = RendererContext::GetPhysicalDevice()->GetPhysicalDevice();
-	VkDevice device = RendererContext::GetDevice()->GetDevice();
+	VkPhysicalDevice physicalDevice = RendererContext::Get().GetPhysicalDevice();
+	VkDevice device = RendererContext::Get().GetDevice();
 
 	VkSurfaceCapabilitiesKHR capabilities{};
 	VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, m_Surface, &capabilities));
@@ -273,62 +225,11 @@ void SwapChain::CreateSwapchain(uint32_t* width, uint32_t* height)
 
 	for (uint32_t i = 0; i < imageCount; i++)
 		m_Images[i].Image = images[i];
-
-	CreateImageViews();
-
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// Depth Image
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-	VkImageCreateInfo depthImageInfo
-	{
-		.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-		.imageType = VK_IMAGE_TYPE_2D,
-		.format = VK_FORMAT_D32_SFLOAT,
-		.extent =
-		{
-			.width = m_Extent.width,
-			.height = m_Extent.height,
-			.depth = 1
-		},
-		.mipLevels = 1,
-		.arrayLayers = 1,
-		.samples = VK_SAMPLE_COUNT_1_BIT,
-		.tiling = VK_IMAGE_TILING_OPTIMAL,
-		.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-		.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-		.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
-	};
-
-	VmaAllocationCreateInfo allocationInfo
-	{
-		.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
-	};
-
-	VK_CHECK(vmaCreateImage(Allocator::GetAllocator(), &depthImageInfo, &allocationInfo, &m_DepthStencil.Image, &m_DepthStencil.Allocation, nullptr));
-
-	VkImageViewCreateInfo depthViewInfo
-	{
-		.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-		.image = m_DepthStencil.Image,
-		.viewType = VK_IMAGE_VIEW_TYPE_2D,
-		.format = VK_FORMAT_D32_SFLOAT,
-		.subresourceRange =
-		{
-			.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
-			.baseMipLevel = 0,
-			.levelCount = 1,
-			.baseArrayLayer = 0,
-			.layerCount = 1
-		}
-	};
-
-	VK_CHECK(vkCreateImageView(device, &depthViewInfo, nullptr, &m_DepthStencil.ImageView));
 }
 
 void SwapChain::CreateImageViews()
 {
-	VkDevice device = RendererContext::GetDevice()->GetDevice();
+	VkDevice device = RendererContext::Get().GetDevice();
 
 	for (auto& image : m_Images)
 	{
@@ -359,46 +260,80 @@ void SwapChain::CreateImageViews()
 	}
 }
 
-void SwapChain::DestroySwapChain()
+uint32_t SwapChain::AcquireNextImage(VkSemaphore signalSemaphore)
 {
-	VkDevice device = RendererContext::GetDevice()->GetDevice();
-
-	if (m_DepthStencil.ImageView)
+	// Consume a deferred rebuild requested by Present().
+	if (m_NeedsResize)
 	{
-		vkDestroyImageView(device, m_DepthStencil.ImageView, nullptr);
+		int windowWidth = 0;
+		int windowHeight = 0;
 
-		m_DepthStencil.ImageView = VK_NULL_HANDLE;
-	}
+		SDL_GetWindowSizeInPixels(m_WindowHandle, &windowWidth, &windowHeight);
 
-	if (m_DepthStencil.Image)
-	{
-		vmaDestroyImage(Allocator::GetAllocator(), m_DepthStencil.Image, m_DepthStencil.Allocation);
-
-		m_DepthStencil.Image = VK_NULL_HANDLE;
-		m_DepthStencil.Allocation = VK_NULL_HANDLE;
-	}
-
-	for (auto& image : m_Images)
-	{
-		if (image.ImageView)
+		if (windowWidth > 0 && windowHeight > 0)
 		{
-			vkDestroyImageView(device, image.ImageView, nullptr);
-			image.ImageView = VK_NULL_HANDLE;
+			OnResize(static_cast<uint32_t>(windowWidth), static_cast<uint32_t>(windowHeight));
 		}
+
+		m_NeedsResize = false;
+
+		return UINT32_MAX;
 	}
 
-	m_Images.clear();
+	VkResult result = vkAcquireNextImageKHR(RendererContext::Get().GetDevice(), m_SwapChain, UINT64_MAX, signalSemaphore, VK_NULL_HANDLE, &m_CurrentImageIndex);
 
-	if (m_SwapChain)
+	if (result == VK_ERROR_OUT_OF_DATE_KHR)
 	{
-		vkDestroySwapchainKHR(device, m_SwapChain, nullptr);
-		m_SwapChain = VK_NULL_HANDLE;
+		int windowWidth = 0;
+		int windowHeight = 0;
+
+		SDL_GetWindowSizeInPixels(m_WindowHandle, &windowWidth, &windowHeight);
+
+		if (windowWidth > 0 && windowHeight > 0)
+		{
+			OnResize(static_cast<uint32_t>(windowWidth), static_cast<uint32_t>(windowHeight));
+		}
+
+		return UINT32_MAX;
+	}
+
+	if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+	{
+		VK_CHECK(result);
+		return UINT32_MAX;
+	}
+
+	return m_CurrentImageIndex;
+}
+
+void SwapChain::Present(VkSemaphore waitSemaphore)
+{
+	VkPresentInfoKHR presentInfo
+	{
+		.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+		.waitSemaphoreCount = 1,
+		.pWaitSemaphores = &waitSemaphore,
+		.swapchainCount = 1,
+		.pSwapchains = &m_SwapChain,
+		.pImageIndices = &m_CurrentImageIndex
+	};
+
+	VkResult result = vkQueuePresentKHR(RendererContext::Get().GetGraphicsQueue(), &presentInfo);
+
+	// Defer recreation until AcquireNextImage().
+	if (result == VK_ERROR_OUT_OF_DATE_KHR)
+	{
+		m_NeedsResize = true;
+	}
+	else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+	{
+		VK_CHECK(result);
 	}
 }
 
 void SwapChain::FindImageFormatAndColorSpace()
 {
-	VkPhysicalDevice physicalDevice = RendererContext::GetPhysicalDevice()->GetPhysicalDevice();
+	VkPhysicalDevice physicalDevice = RendererContext::Get().GetPhysicalDevice();
 
 	// Get list of supported surface formats
 	uint32_t formatCount;

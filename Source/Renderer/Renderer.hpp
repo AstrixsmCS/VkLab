@@ -7,14 +7,18 @@
 
 #include <vector>
 
+struct SDL_Window;
+
 class Renderer
 {
 public:
-	void Initialize();
+	void Initialize(SDL_Window* windowHandle);
 	void Shutdown();
 
 	bool BeginFrame();
 	void EndFrame();
+
+	SwapChain& GetSwapChain() { return *m_SwapChain; }
 
 	VkSemaphore GetImageAvailableSemaphore() const { return m_ImageAvailableSemaphores[s_CurrentFrameIndex]; }
 	VkSemaphore GetRenderFinishedSemaphore(uint32_t imageIndex) const { return m_RenderFinishedSemaphores[imageIndex]; }
@@ -26,13 +30,11 @@ public:
 
 	static constexpr uint32_t  MAX_FRAMES_IN_FLIGHT = 3;
 	static constexpr uint32_t GetFramesInFlight() { return MAX_FRAMES_IN_FLIGHT; }
-
-	void SetSwapChain(SwapChain* swapChain) { m_SwapChain = swapChain; }
 private:
 	void CreateSyncObjects();
 	void DestroySyncObjects();
 private:
-	SwapChain* m_SwapChain = nullptr;
+	std::unique_ptr<SwapChain> m_SwapChain = nullptr;
 
 	CommandBuffer m_FrameCommandBuffer;
 
@@ -40,7 +42,7 @@ private:
 	std::vector<VkSemaphore> m_RenderFinishedSemaphores;
 
 	TimelineSemaphore m_FrameTimeline;
-	uint64_t m_NextSignalValue = MAX_FRAMES_IN_FLIGHT + 1;
+	uint64_t m_NextSignalValue = 1;
 	uint64_t m_CurrentSignalValue = 0;
 
 	uint32_t m_CurrentImageIndex = UINT32_MAX;

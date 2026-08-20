@@ -1,6 +1,8 @@
 #pragma once
 
-#include "Device.hpp"
+#include "Vulkan.hpp"
+
+#include <unordered_set>
 
 struct SDL_Window;
 
@@ -9,18 +11,38 @@ class RendererContext
 public:
 	static void Initialize();
 	static void Shutdown();
+	static RendererContext& Get();
 
-	static VkInstance GetInstance() { return s_VulkanInstance; }
+	VkInstance GetInstance() const { return m_VulkanInstance; }
+	VkPhysicalDevice GetPhysicalDevice() const { return m_PhysicalDevice; }
+	VkDevice GetDevice() const { return m_LogicalDevice; }
 
-	static void SetPhysicalDevice(const PhysicalDevice* device) { s_PhysicalDevice = device; }
-	static void SetLogicalDevice(const LogicalDevice* device)   { s_LogicalDevice = device; }
+	VkQueue GetGraphicsQueue() const { return m_GraphicsQueue; }
+	uint32_t GetGraphicsFamily() const { return m_GraphicsFamily; }
 
-	static const PhysicalDevice* GetPhysicalDevice() { return s_PhysicalDevice; }
-	static const LogicalDevice*  GetDevice()         { return s_LogicalDevice; }
+	const VkPhysicalDeviceProperties& GetPhysicalDeviceProperties() const { return m_PhysicalDeviceProperties; }
+	const VkPhysicalDeviceLimits& GetPhysicalDeviceLimits() const { return m_PhysicalDeviceProperties.limits; }
+
+	bool IsExtensionSupported(const std::string& extensionName) const;
 private:
-	inline static VkInstance s_VulkanInstance = VK_NULL_HANDLE;
-	inline static VkDebugUtilsMessengerEXT m_DebugMessenger = VK_NULL_HANDLE;
+	void CreateInstance();
+	void SetupDebugMessenger();
 
-	inline static const PhysicalDevice* s_PhysicalDevice;
-	inline static const LogicalDevice* s_LogicalDevice;
+	void PickPhysicalDevice();
+	void CreateLogicalDevice();
+private:
+	VkInstance m_VulkanInstance = VK_NULL_HANDLE;
+	VkDebugUtilsMessengerEXT m_DebugMessenger = VK_NULL_HANDLE;
+
+	VkPhysicalDevice m_PhysicalDevice = VK_NULL_HANDLE;
+	VkPhysicalDeviceProperties m_PhysicalDeviceProperties{};
+	VkPhysicalDeviceFeatures m_PhysicalDeviceFeatures{};
+	VkDevice m_LogicalDevice = VK_NULL_HANDLE;
+
+	VkQueue m_GraphicsQueue = VK_NULL_HANDLE;
+	uint32_t m_GraphicsFamily = UINT32_MAX;
+
+	std::unordered_set<std::string> m_SupportedExtensions;
+
+	bool m_EnableDebugMarkers = false;
 };

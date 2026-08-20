@@ -7,7 +7,7 @@ void CommandBuffer::Create(uint32_t count, const std::string& debugName)
 {
 	m_DebugName = debugName;
 
-	VkDevice device = RendererContext::GetDevice()->GetDevice();
+	VkDevice device = RendererContext::Get().GetDevice();
 
 	const uint32_t commandBufferCount = Renderer::MAX_FRAMES_IN_FLIGHT;
 
@@ -15,7 +15,7 @@ void CommandBuffer::Create(uint32_t count, const std::string& debugName)
 	{
 		.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
 		.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-		.queueFamilyIndex = static_cast<uint32_t>(RendererContext::GetPhysicalDevice()->GetQueueFamilyIndices().Graphics)
+		.queueFamilyIndex = static_cast<uint32_t>(RendererContext::Get().GetGraphicsFamily())
 	};
 
 	VK_CHECK(vkCreateCommandPool(device, &poolInfo, nullptr, &m_CommandPool));
@@ -38,7 +38,7 @@ void CommandBuffer::Destroy()
 	if (m_CommandPool == VK_NULL_HANDLE)
 		return;
 
-	VkDevice device = RendererContext::GetDevice()->GetDevice();
+	VkDevice device = RendererContext::Get().GetDevice();
 
 	vkDestroyCommandPool(device, m_CommandPool, nullptr);
 
@@ -97,5 +97,5 @@ void CommandBuffer::Submit()
 		.pCommandBufferInfos = &commandBufferInfo
 	};
 
-	VK_CHECK(vkQueueSubmit2(RendererContext::GetDevice()->GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE));
+	VK_CHECK(vkQueueSubmit2(RendererContext::Get().GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE));
 }

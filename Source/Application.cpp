@@ -2,6 +2,8 @@
 
 #include <SDL3/SDL.h>
 
+#include <vma/vk_mem_alloc.h>
+
 #include <print>
 
 void Application::ShowError(const std::string& errorMessage) const
@@ -25,7 +27,7 @@ bool Application::Initialize()
 
 void Application::Shutdown()
 {
-	vkDeviceWaitIdle(m_LogicalDevice.GetDevice());
+	vkDeviceWaitIdle(RendererContext::Get().GetDevice());
 
 	m_Pipeline.Shutdown();
 
@@ -38,16 +40,11 @@ void Application::Shutdown()
 	m_IndexBuffer.Destroy();
 	m_VertexBuffer.Destroy();
 
-	m_Renderer.Shutdown();
-
-	m_SwapChain.Shutdown();
+	DestroyDepthImage();
 
 	Allocator::Shutdown();
 
-	m_LogicalDevice.Destroy();
-	m_PhysicalDevice.reset();
-
-	RendererContext::Shutdown();
+	m_Renderer.Shutdown();
 
 	if (m_Window)
 	{
@@ -83,21 +80,11 @@ void Application::Run()
 
 bool Application::InitializeVulkan()
 {
-	RendererContext::Initialize();
+	m_Renderer.Initialize(m_Window);
 
-	m_PhysicalDevice = PhysicalDevice::Select();
-	m_LogicalDevice.Create(*m_PhysicalDevice);
+	Allocator::Initialize();
 
-	RendererContext::SetPhysicalDevice(m_PhysicalDevice.get());
-	RendererContext::SetLogicalDevice(&m_LogicalDevice);
-
-	Allocator::Initialize(m_LogicalDevice);
-
-	m_SwapChain.SetWindow(m_Window);
-	m_SwapChain.Initialize();
-
-	m_Renderer.SetSwapChain(&m_SwapChain);
-	m_Renderer.Initialize();
+	CreateDepthImage();
 
 	if (!CreateShader())
 	{
@@ -175,17 +162,92 @@ bool Application::CreateGeometry()
 	return m_VertexBuffer.GetBuffer() != VK_NULL_HANDLE && m_IndexBuffer.GetBuffer()  != VK_NULL_HANDLE;
 }
 
+void Application::CreateDepthImage()
+{
+	VkDevice device = RendererContext::Get().GetDevice();
+
+	SwapChain& swapChain = m_Renderer.GetSwapChain();
+	const VkExtent2D extent = swapChain.GetExtent();
+
+	VkImageCreateInfo depthImageInfo
+	{
+		.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+		.imageType = VK_IMAGE_TYPE_2D,
+		.format = VK_FORMAT_D32_SFLOAT,
+		.extent =
+		{
+			.width = extent.width,
+			.height = extent.height,
+			.depth = 1
+		},
+		.mipLevels = 1,
+		.arrayLayers = 1,
+		.samples = VK_SAMPLE_COUNT_1_BIT,
+		.tiling = VK_IMAGE_TILING_OPTIMAL,
+		.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+		.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+		.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
+	};
+
+	VmaAllocationCreateInfo allocationInfo
+	{
+		.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
+	};
+
+	VK_CHECK(vmaCreateImage(Allocator::GetAllocator(), &depthImageInfo, &allocationInfo, &m_DepthStencil.Image, &m_DepthStencil.Allocation, nullptr));
+
+	VkImageViewCreateInfo depthViewInfo
+	{
+		.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+		.image = m_DepthStencil.Image,
+		.viewType = VK_IMAGE_VIEW_TYPE_2D,
+		.format = VK_FORMAT_D32_SFLOAT,
+		.subresourceRange =
+		{
+			.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+			.baseMipLevel = 0,
+			.levelCount = 1,
+			.baseArrayLayer = 0,
+			.layerCount = 1
+		}
+	};
+
+	VK_CHECK(vkCreateImageView(device, &depthViewInfo, nullptr, &m_DepthStencil.ImageView));
+}
+
+void Application::DestroyDepthImage()
+{
+	VkDevice device = RendererContext::Get().GetDevice();
+
+	if (m_DepthStencil.ImageView)
+	{
+		vkDestroyImageView(device, m_DepthStencil.ImageView, nullptr);
+
+		m_DepthStencil.ImageView = VK_NULL_HANDLE;
+	}
+
+	if (m_DepthStencil.Image)
+	{
+		vmaDestroyImage(Allocator::GetAllocator(), m_DepthStencil.Image, m_DepthStencil.Allocation);
+
+		m_DepthStencil.Image = VK_NULL_HANDLE;
+		m_DepthStencil.Allocation = VK_NULL_HANDLE;
+	}
+}
+
 void Application::Render()
 {
 	if (!m_Renderer.BeginFrame())
 		return;
 
 	VkCommandBuffer cmd = m_Renderer.GetCurrentCommandBuffer();
-	const VkExtent2D extent = m_SwapChain.GetExtent();
+
+	SwapChain& swapChain = m_Renderer.GetSwapChain();
+	const VkExtent2D extent = swapChain.GetExtent();
 
 	SetImageLayout(
 		cmd,
-		m_SwapChain.GetCurrentImage(),
+		swapChain.GetCurrentImage(),
 		VK_IMAGE_ASPECT_COLOR_BIT,
 		VK_IMAGE_LAYOUT_UNDEFINED,
 		VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
@@ -194,7 +256,7 @@ void Application::Render()
 
 	SetImageLayout(
 		cmd,
-		m_SwapChain.m_DepthStencil.Image,
+		m_DepthStencil.Image,
 		VK_IMAGE_ASPECT_DEPTH_BIT,
 		VK_IMAGE_LAYOUT_UNDEFINED,
 		VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
@@ -203,7 +265,7 @@ void Application::Render()
 
 	AttachmentInfo colorAttachment
 	{
-		.ImageView  = m_SwapChain.GetCurrentImageView(),
+		.ImageView  = swapChain.GetCurrentImageView(),
 		.Format     = Format::BGRA8_UNorm,
 		.LoadOp     = LoadOp::Clear,
 		.StoreOp    = StoreOp::Store,
@@ -213,7 +275,7 @@ void Application::Render()
 
 	AttachmentInfo depthAttachment
 	{
-		.ImageView  = m_SwapChain.m_DepthStencil.ImageView,
+		.ImageView  = m_DepthStencil.ImageView,
 		.Format     = Format::D32_Float,
 		.LoadOp     = LoadOp::Clear,
 		.StoreOp    = StoreOp::DontCare,
@@ -251,7 +313,7 @@ void Application::Render()
 
 	SetImageLayout(
 		cmd,
-		m_SwapChain.GetCurrentImage(),
+		swapChain.GetCurrentImage(),
 		VK_IMAGE_ASPECT_COLOR_BIT,
 		VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 		VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
@@ -259,219 +321,4 @@ void Application::Render()
 		VK_PIPELINE_STAGE_2_NONE);
 
 	m_Renderer.EndFrame();
-	m_SwapChain.Present(m_Renderer.GetRenderFinishedSemaphore(m_Renderer.GetCurrentImageIndex()));
-}
-
-void Application::InsertImageMemoryBarrier(
-	VkCommandBuffer commandBuffer,
-	VkImage image,
-	VkAccessFlags2 srcAccessMask,
-	VkAccessFlags2 dstAccessMask,
-	VkImageLayout oldImageLayout,
-	VkImageLayout newImageLayout,
-	VkPipelineStageFlags2 srcStageMask,
-	VkPipelineStageFlags2 dstStageMask,
-	VkImageSubresourceRange subresourceRange)
-{
-	VkImageMemoryBarrier2 imageMemoryBarrier
-	{
-		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-
-		.srcStageMask  = srcStageMask,
-		.srcAccessMask = srcAccessMask,
-
-		.dstStageMask  = dstStageMask,
-		.dstAccessMask = dstAccessMask,
-
-		.oldLayout = oldImageLayout,
-		.newLayout = newImageLayout,
-
-		.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-		.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-
-		.image = image,
-
-		.subresourceRange = subresourceRange
-	};
-
-	VkDependencyInfo dependencyInfo
-	{
-		.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-
-		.imageMemoryBarrierCount = 1,
-		.pImageMemoryBarriers    = &imageMemoryBarrier
-	};
-
-	vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
-}
-
-void Application::SetImageLayout(
-	VkCommandBuffer commandBuffer,
-	VkImage image,
-	VkImageLayout oldImageLayout,
-	VkImageLayout newImageLayout,
-	VkImageSubresourceRange subresourceRange,
-	VkPipelineStageFlags2 srcStageMask,
-	VkPipelineStageFlags2 dstStageMask)
-{
-	VkAccessFlags2 srcAccessMask = 0;
-	VkAccessFlags2 dstAccessMask = 0;
-
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// Source Layout
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-	switch (oldImageLayout)
-	{
-		case VK_IMAGE_LAYOUT_UNDEFINED:
-		{
-			srcAccessMask = 0;
-			break;
-		}
-
-		case VK_IMAGE_LAYOUT_PREINITIALIZED:
-		{
-			srcAccessMask = VK_ACCESS_2_HOST_WRITE_BIT;
-			break;
-		}
-
-		case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-		{
-			srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-			break;
-		}
-
-		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-		case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
-		{
-			srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-			break;
-		}
-
-		case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
-		{
-			srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
-			break;
-		}
-
-		case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-		{
-			srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-			break;
-		}
-
-		case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-		{
-			srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-			break;
-		}
-
-		case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
-		{
-			srcAccessMask = 0;
-			break;
-		}
-
-		default:
-		{
-			break;
-		}
-	}
-
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// Destination Layout
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-	switch (newImageLayout)
-	{
-		case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-		{
-			dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-			break;
-		}
-
-		case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
-		{
-			dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
-			break;
-		}
-
-		case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-		{
-			dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-			break;
-		}
-
-		case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-		case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
-		{
-			dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-			break;
-		}
-
-		case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-		{
-			if (srcAccessMask == 0)
-			{
-				srcAccessMask =
-					VK_ACCESS_2_HOST_WRITE_BIT |
-					VK_ACCESS_2_TRANSFER_WRITE_BIT;
-			}
-
-			dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
-			break;
-		}
-
-		case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
-		{
-			dstAccessMask = 0;
-			break;
-		}
-
-		default:
-		{
-			break;
-		}
-	}
-
-	InsertImageMemoryBarrier(
-		commandBuffer,
-		image,
-		srcAccessMask,
-		dstAccessMask,
-		oldImageLayout,
-		newImageLayout,
-		srcStageMask,
-		dstStageMask,
-		subresourceRange
-	);
-}
-
-void Application::SetImageLayout(
-	VkCommandBuffer commandBuffer,
-	VkImage image,
-	VkImageAspectFlags aspectMask,
-	VkImageLayout oldImageLayout,
-	VkImageLayout newImageLayout,
-	VkPipelineStageFlags2 srcStageMask,
-	VkPipelineStageFlags2 dstStageMask)
-{
-	VkImageSubresourceRange subresourceRange
-	{
-		.aspectMask     = aspectMask,
-		.baseMipLevel   = 0,
-		.levelCount     = 1,
-		.baseArrayLayer = 0,
-		.layerCount     = 1
-	};
-
-	SetImageLayout(
-		commandBuffer,
-		image,
-		oldImageLayout,
-		newImageLayout,
-		subresourceRange,
-		srcStageMask,
-		dstStageMask
-	);
 }

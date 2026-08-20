@@ -2,67 +2,44 @@
 
 #include "RendererContext.hpp"
 
-void Renderer::Initialize()
+void Renderer::Initialize(SDL_Window* windowHandle)
 {
-	m_FrameTimeline.Initialize(MAX_FRAMES_IN_FLIGHT);
+	RendererContext::Initialize();
+
+	m_SwapChain = std::make_unique<SwapChain>(windowHandle);
+	m_SwapChain->Initialize();
+
 	CreateSyncObjects();
 	m_FrameCommandBuffer.Create(MAX_FRAMES_IN_FLIGHT, "Frame Command Buffer");
 }
 
-void Renderer::CreateSyncObjects()
+void Renderer::Shutdown()
 {
-	VkDevice device = RendererContext::GetDevice()->GetDevice();
+	vkDeviceWaitIdle(RendererContext::Get().GetDevice());
 
-	uint32_t imageCount = m_SwapChain->GetImageCount();
+	DestroySyncObjects();
 
-	VkSemaphoreCreateInfo semaphoreInfo
-	{
-		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
-	};
-
-	m_ImageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
-	m_RenderFinishedSemaphores.resize(imageCount);
-
-	for (VkSemaphore& semaphore : m_ImageAvailableSemaphores)
-	{
-		VK_CHECK(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphore));
-	}
-
-	for (VkSemaphore& semaphore : m_RenderFinishedSemaphores)
-	{
-		VK_CHECK(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphore));
-	}
-}
-
-void Renderer::DestroySyncObjects()
-{
-	VkDevice device = RendererContext::GetDevice()->GetDevice();
-
-	for (VkSemaphore semaphore : m_ImageAvailableSemaphores)
-		vkDestroySemaphore(device, semaphore, nullptr);
-
-	for (VkSemaphore semaphore : m_RenderFinishedSemaphores)
-		vkDestroySemaphore(device, semaphore, nullptr);
-
-	m_ImageAvailableSemaphores.clear();
-	m_RenderFinishedSemaphores.clear();
+	m_FrameTimeline.Shutdown();
+	m_SwapChain.reset();
+	m_FrameCommandBuffer.Destroy();
+	RendererContext::Shutdown();
 }
 
 bool Renderer::BeginFrame()
 {
 	m_CurrentSignalValue = m_NextSignalValue++;
 
-	const uint64_t waitValue = m_CurrentSignalValue - MAX_FRAMES_IN_FLIGHT;
-
-	m_FrameTimeline.Wait(waitValue);
+	// Wait before reusing this frame's semaphore slot
+	if (m_CurrentSignalValue > MAX_FRAMES_IN_FLIGHT)
+	{
+		const uint64_t waitValue = m_CurrentSignalValue - MAX_FRAMES_IN_FLIGHT;
+		m_FrameTimeline.Wait(waitValue);
+	}
 
 	m_CurrentImageIndex = m_SwapChain->AcquireNextImage(GetImageAvailableSemaphore());
 
 	if (m_CurrentImageIndex == UINT32_MAX)
-	{
-		m_CurrentImageIndex = UINT32_MAX;
 		return false;
-	}
 
 	m_FrameCommandBuffer.Reset();
 	m_FrameCommandBuffer.Begin();
@@ -116,18 +93,49 @@ void Renderer::EndFrame()
 		.pSignalSemaphoreInfos = signalInfos,
 	};
 
-	VK_CHECK(vkQueueSubmit2(RendererContext::GetDevice()->GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE));
+	VK_CHECK(vkQueueSubmit2(RendererContext::Get().GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE));
+
+	m_SwapChain->Present(GetRenderFinishedSemaphore(m_CurrentImageIndex));
 
 	s_CurrentFrameIndex = (s_CurrentFrameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
-void Renderer::Shutdown()
+void Renderer::CreateSyncObjects()
 {
-	vkDeviceWaitIdle(RendererContext::GetDevice()->GetDevice());
+	VkDevice device = RendererContext::Get().GetDevice();
 
-	m_FrameCommandBuffer.Destroy();
+	uint32_t imageCount = m_SwapChain->GetImageCount();
 
-	DestroySyncObjects();
+	m_FrameTimeline.Initialize(0);
 
-	m_FrameTimeline.Shutdown();
+	VkSemaphoreCreateInfo semaphoreInfo
+	{
+		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
+	};
+
+	m_ImageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+	m_RenderFinishedSemaphores.resize(imageCount);
+
+	for (VkSemaphore& semaphore : m_ImageAvailableSemaphores)
+	{
+		VK_CHECK(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphore));
+	}
+
+	for (VkSemaphore& semaphore : m_RenderFinishedSemaphores)
+	{
+		VK_CHECK(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphore));
+	}
+}
+
+void Renderer::DestroySyncObjects()
+{
+	VkDevice device = RendererContext::Get().GetDevice();
+
+	for (VkSemaphore semaphore : m_ImageAvailableSemaphores)
+		vkDestroySemaphore(device, semaphore, nullptr);
+	for (VkSemaphore semaphore : m_RenderFinishedSemaphores)
+		vkDestroySemaphore(device, semaphore, nullptr);
+
+	m_ImageAvailableSemaphores.clear();
+	m_RenderFinishedSemaphores.clear();
 }

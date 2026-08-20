@@ -21,14 +21,14 @@ void TimelineSemaphore::Initialize(uint64_t initialValue)
 		.pNext = &typeCreateInfo,
 	};
 
-	VK_CHECK(vkCreateSemaphore(RendererContext::GetDevice()->GetDevice(), &createInfo, nullptr, &m_Semaphore));
+	VK_CHECK(vkCreateSemaphore(RendererContext::Get().GetDevice(), &createInfo, nullptr, &m_Semaphore));
 }
 
 void TimelineSemaphore::Shutdown()
 {
 	if (m_Semaphore != VK_NULL_HANDLE)
 	{
-		vkDestroySemaphore(RendererContext::GetDevice()->GetDevice(), m_Semaphore, nullptr);
+		vkDestroySemaphore(RendererContext::Get().GetDevice(), m_Semaphore, nullptr);
 		m_Semaphore = VK_NULL_HANDLE;
 	}
 }
@@ -42,7 +42,7 @@ void TimelineSemaphore::Signal(uint64_t value)
 		.value = value,
 	};
 
-	VK_CHECK(vkSignalSemaphore(RendererContext::GetDevice()->GetDevice(), &signalInfo));
+	VK_CHECK(vkSignalSemaphore(RendererContext::Get().GetDevice(), &signalInfo));
 }
 
 void TimelineSemaphore::Wait(uint64_t value, uint64_t timeout)
@@ -54,13 +54,13 @@ void TimelineSemaphore::Wait(uint64_t value, uint64_t timeout)
 		.pSemaphores = &m_Semaphore,
 		.pValues = &value
 	};
-	VK_CHECK(vkWaitSemaphores(RendererContext::GetDevice()->GetDevice(), &waitInfo, timeout));
+	VK_CHECK(vkWaitSemaphores(RendererContext::Get().GetDevice(), &waitInfo, timeout));
 }
 
 uint64_t TimelineSemaphore::GetValue() const
 {
 	uint64_t value = 0;
-	VK_CHECK(vkGetSemaphoreCounterValue(RendererContext::GetDevice()->GetDevice(), m_Semaphore, &value));
+	VK_CHECK(vkGetSemaphoreCounterValue(RendererContext::Get().GetDevice(), m_Semaphore, &value));
 
 	return value;
 }

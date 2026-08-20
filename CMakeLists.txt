@@ -43,6 +43,7 @@ target_link_libraries(VkLab PRIVATE
 		Vulkan::Vulkan
 		Vulkan::volk
 		slang::slang
+		fastgltf::fastgltf
 )
 
 # ==== Add Subsystems ====

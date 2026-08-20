@@ -12,10 +12,11 @@ struct SDL_Window;
 class SwapChain
 {
 public:
-	void SetWindow(SDL_Window* windowHandle) { m_WindowHandle = windowHandle; }
+	SwapChain(SDL_Window* windowHandle);
+	~SwapChain();
 
 	void Initialize();
-	void Shutdown();
+	void Cleanup();
 
 	void OnResize(uint32_t width, uint32_t height);
 
@@ -38,8 +39,6 @@ private:
 	void CreateSwapchain(uint32_t* width, uint32_t* height);
 	void CreateImageViews();
 
-	void DestroySwapChain();
-
 	void FindImageFormatAndColorSpace();
 private:
 	struct SwapchainImage
@@ -48,13 +47,6 @@ private:
 		VkImageView ImageView = VK_NULL_HANDLE;
 	};
 	std::vector<SwapchainImage> m_Images;
-
-	struct DepthImage
-	{
-		VkImage Image = VK_NULL_HANDLE;
-		VmaAllocation Allocation = VK_NULL_HANDLE;
-		VkImageView ImageView = VK_NULL_HANDLE;
-	} m_DepthStencil;
 
 	SDL_Window* m_WindowHandle = nullptr;
 
@@ -68,7 +60,4 @@ private:
 	uint32_t m_CurrentImageIndex = 0;    // Index of the current swapchain image.  Can be different from frame index
 
 	bool m_NeedsResize = false;
-
-	friend class RendererContext;
-	friend class Application;
 };

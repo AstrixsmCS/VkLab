@@ -49,7 +49,7 @@ void Shader::Reload()
 
 void Shader::CreateShaderModule()
 {
-	VkDevice device = RendererContext::GetDevice()->GetDevice();
+	VkDevice device = RendererContext::Get().GetDevice();
 
 	VkShaderModuleCreateInfo createInfo
 	{
@@ -84,7 +84,7 @@ void Shader::Destroy()
 {
 	if (m_ShaderModule != VK_NULL_HANDLE)
 	{
-		vkDestroyShaderModule(RendererContext::GetDevice()->GetDevice(), m_ShaderModule, nullptr);
+		vkDestroyShaderModule(RendererContext::Get().GetDevice(), m_ShaderModule, nullptr);
 
 		m_ShaderModule = VK_NULL_HANDLE;
 	}

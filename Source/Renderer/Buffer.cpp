@@ -1,5 +1,7 @@
 #include "Buffer.hpp"
 
+#include <vma/vk_mem_alloc.h>
+
 #include <cassert>
 #include <cstring>
 

@@ -2,21 +2,24 @@
 
 #include "RendererContext.hpp"
 
-#define VMA_IMPLEMENTATION
+#include "Vulkan.hpp"
+
 #include <vma/vk_mem_alloc.h>
 
 VmaAllocator Allocator::s_VmaAllocator = VK_NULL_HANDLE;
 
-void Allocator::Initialize(const LogicalDevice& device)
+void Allocator::Initialize()
 {
+	auto& context = RendererContext::Get();
+
 	VmaVulkanFunctions vmaFuncInfo{};
 	VmaAllocatorCreateInfo vmaAllocInfo
 	{
 		.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
-		.physicalDevice = device.GetPhysicalDevice()->GetPhysicalDevice(),
-		.device = device.GetDevice(),
+		.physicalDevice = context.GetPhysicalDevice(),
+		.device = context.GetDevice(),
 		.pVulkanFunctions = &vmaFuncInfo,
-		.instance = RendererContext::GetInstance(),
+		.instance = context.GetInstance(),
 		.vulkanApiVersion = VK_API_VERSION_1_4
 	};
 

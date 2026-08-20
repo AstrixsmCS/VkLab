@@ -40,7 +40,7 @@ void Pipeline::Create(const PipelineSpecification &specification)
 {
 	m_Specification = specification;
 
-	VkDevice device = RendererContext::GetDevice()->GetDevice();
+	VkDevice device = RendererContext::Get().GetDevice();
 
 	CreatePipelineLayout();
 
@@ -282,7 +282,7 @@ void Pipeline::Create(const PipelineSpecification &specification)
 
 void Pipeline::CreatePipelineLayout()
 {
-	VkDevice device = RendererContext::GetDevice()->GetDevice();
+	VkDevice device = RendererContext::Get().GetDevice();
 
 	VkPipelineLayoutCreateInfo layoutInfo
 	{
@@ -309,7 +309,7 @@ void Pipeline::Bind(VkCommandBuffer commandBuffer) const
 
 void Pipeline::Shutdown()
 {
-	VkDevice device = RendererContext::GetDevice()->GetDevice();
+	VkDevice device = RendererContext::Get().GetDevice();
 
 	if (m_Pipeline != VK_NULL_HANDLE)
 	{

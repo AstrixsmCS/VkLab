@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Renderer/RendererContext.hpp"
-#include "Renderer/Device.hpp"
 #include "Renderer/Allocator.hpp"
 #include "Renderer/SwapChain.hpp"
 #include "Renderer/Shader.hpp"
@@ -35,26 +34,19 @@ private:
 	bool           CreateShader();
 	bool           CreateGraphicsPipeline();
 	bool           CreateGeometry();
+
+	void CreateDepthImage();
+	void DestroyDepthImage();
+
 	void           Render();
 private:
-	static constexpr uint32_t MaxFramesInFlight = 3;
-
 	SDL_Window* m_Window  = nullptr;
 	uint32_t    m_Width   = 1280;
 	uint32_t    m_Height  = 720;
 	bool        m_Running = false;
 
-	uint64_t m_FrameIndex      = 0;
-
-	// Device
-	std::unique_ptr<PhysicalDevice> m_PhysicalDevice;
-	LogicalDevice                   m_LogicalDevice;
-
 	// Renderer
 	Renderer  m_Renderer;
-
-	// Swapchain
-	SwapChain m_SwapChain;
 
 	// Pipeline
 	Pipeline m_Pipeline;
@@ -66,32 +58,10 @@ private:
 	VertexBuffer m_VertexBuffer;
 	IndexBuffer  m_IndexBuffer;
 
-	void InsertImageMemoryBarrier(
-			VkCommandBuffer cmdbuffer,
-			VkImage image,
-			VkAccessFlags2 srcAccessMask,
-			VkAccessFlags2 dstAccessMask,
-			VkImageLayout oldImageLayout,
-			VkImageLayout newImageLayout,
-			VkPipelineStageFlags2 srcStageMask,
-			VkPipelineStageFlags2 dstStageMask,
-			VkImageSubresourceRange subresourceRange);
-
-	void SetImageLayout(
-		VkCommandBuffer cmdbuffer,
-		VkImage image,
-		VkImageLayout oldImageLayout,
-		VkImageLayout newImageLayout,
-		VkImageSubresourceRange subresourceRange,
-		VkPipelineStageFlags2 srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-		VkPipelineStageFlags2 dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);
-
-	void SetImageLayout(
-		VkCommandBuffer cmdbuffer,
-		VkImage image,
-		VkImageAspectFlags aspectMask,
-		VkImageLayout oldImageLayout,
-		VkImageLayout newImageLayout,
-		VkPipelineStageFlags2 srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-		VkPipelineStageFlags2 dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);
+	struct DepthImage
+	{
+		VkImage Image = VK_NULL_HANDLE;
+		VmaAllocation Allocation = VK_NULL_HANDLE;
+		VkImageView ImageView = VK_NULL_HANDLE;
+	} m_DepthStencil;
 };
