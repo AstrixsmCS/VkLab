@@ -134,19 +134,8 @@ static bool CheckDriverAPIVersionSupport(uint32_t minimumSupportedVersion)
 	{
 		std::println("Incompatible Vulkan driver version!");
 
-		std::println(
-			"  You have {}.{}.{}",
-			VK_API_VERSION_MAJOR(instanceVersion),
-			VK_API_VERSION_MINOR(instanceVersion),
-			VK_API_VERSION_PATCH(instanceVersion)
-		);
-
-		std::println(
-			"  You need at least {}.{}.{}",
-			VK_API_VERSION_MAJOR(minimumSupportedVersion),
-			VK_API_VERSION_MINOR(minimumSupportedVersion),
-			VK_API_VERSION_PATCH(minimumSupportedVersion)
-		);
+		std::println("  You have {}.{}.{}", VK_API_VERSION_MAJOR(instanceVersion), VK_API_VERSION_MINOR(instanceVersion), VK_API_VERSION_PATCH(instanceVersion));
+		std::println("  You need at least {}.{}.{}", VK_API_VERSION_MAJOR(minimumSupportedVersion), VK_API_VERSION_MINOR(minimumSupportedVersion), VK_API_VERSION_PATCH(minimumSupportedVersion));
 
 		return false;
 	}
@@ -168,9 +157,7 @@ void RendererContext::Initialize()
 		throw std::runtime_error("Failed to initialize volk!");
 
 	if (!CheckDriverAPIVersionSupport(VK_API_VERSION_1_4))
-		throw std::runtime_error(
-			"Incompatible Vulkan driver. Update your GPU drivers!"
-		);
+		throw std::runtime_error("Incompatible Vulkan driver. Update your GPU drivers!");
 
 	s_Instance->CreateInstance();
 	s_Instance->SetupDebugMessenger();
@@ -187,10 +174,7 @@ void RendererContext::Shutdown()
 	{
 		vkDeviceWaitIdle(s_Instance->m_LogicalDevice);
 
-		vkDestroyDevice(
-			s_Instance->m_LogicalDevice,
-			nullptr
-		);
+		vkDestroyDevice(s_Instance->m_LogicalDevice, nullptr);
 
 		s_Instance->m_LogicalDevice = VK_NULL_HANDLE;
 		s_Instance->m_GraphicsQueue = VK_NULL_HANDLE;
@@ -198,21 +182,14 @@ void RendererContext::Shutdown()
 
 	if (s_Instance->m_DebugMessenger)
 	{
-		vkDestroyDebugUtilsMessengerEXT(
-			s_Instance->m_VulkanInstance,
-			s_Instance->m_DebugMessenger,
-			nullptr
-		);
+		vkDestroyDebugUtilsMessengerEXT(s_Instance->m_VulkanInstance, s_Instance->m_DebugMessenger, nullptr);
 
 		s_Instance->m_DebugMessenger = VK_NULL_HANDLE;
 	}
 
 	if (s_Instance->m_VulkanInstance)
 	{
-		vkDestroyInstance(
-			s_Instance->m_VulkanInstance,
-			nullptr
-		);
+		vkDestroyInstance(s_Instance->m_VulkanInstance, nullptr);
 
 		s_Instance->m_VulkanInstance = VK_NULL_HANDLE;
 	}
@@ -237,21 +214,14 @@ void RendererContext::CreateInstance()
 {
 	uint32_t sdlExtensionCount = 0;
 
-	const char* const* sdlExtensions =
-		SDL_Vulkan_GetInstanceExtensions(&sdlExtensionCount);
+	const char* const* sdlExtensions = SDL_Vulkan_GetInstanceExtensions(&sdlExtensionCount);
 
 	if (!sdlExtensions)
 	{
-		throw std::runtime_error(
-			std::string("SDL_Vulkan_GetInstanceExtensions failed: ") +
-			SDL_GetError()
-		);
+		throw std::runtime_error(std::string("SDL_Vulkan_GetInstanceExtensions failed: ") + SDL_GetError());
 	}
 
-	std::vector<const char*> instanceExtensions(
-		sdlExtensions,
-		sdlExtensions + sdlExtensionCount
-	);
+	std::vector<const char*> instanceExtensions(sdlExtensions, sdlExtensions + sdlExtensionCount);
 
 	if (s_Validation)
 		instanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
@@ -264,22 +234,12 @@ void RendererContext::CreateInstance()
 
 	if (s_Validation)
 	{
-		constexpr const char* validationLayerName =
-			"VK_LAYER_KHRONOS_validation";
+		constexpr const char* validationLayerName = "VK_LAYER_KHRONOS_validation";
 
 		uint32_t layerCount = 0;
-
-		vkEnumerateInstanceLayerProperties(
-			&layerCount,
-			nullptr
-		);
-
+		vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
 		std::vector<VkLayerProperties> availableLayers(layerCount);
-
-		vkEnumerateInstanceLayerProperties(
-			&layerCount,
-			availableLayers.data()
-		);
+		vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
 
 		bool found = false;
 
@@ -298,10 +258,7 @@ void RendererContext::CreateInstance()
 		}
 		else
 		{
-			std::println(
-				"[Renderer] Validation layer {} not found. Validation disabled.",
-				validationLayerName
-			);
+			std::println("[Renderer] Validation layer {} not found. Validation disabled.", validationLayerName);
 
 			s_Validation = false;
 		}
@@ -339,27 +296,14 @@ void RendererContext::CreateInstance()
 	{
 		.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
 		.pNext = s_Validation ? &debugInfo : nullptr,
-
 		.pApplicationInfo = &applicationInfo,
-
-		.enabledLayerCount =
-			static_cast<uint32_t>(requestedLayers.size()),
-
-		.ppEnabledLayerNames =
-			requestedLayers.data(),
-
-		.enabledExtensionCount =
-			static_cast<uint32_t>(instanceExtensions.size()),
-
-		.ppEnabledExtensionNames =
-			instanceExtensions.data(),
+		.enabledLayerCount = static_cast<uint32_t>(requestedLayers.size()),
+		.ppEnabledLayerNames = requestedLayers.data(),
+		.enabledExtensionCount = static_cast<uint32_t>(instanceExtensions.size()),
+		.ppEnabledExtensionNames = instanceExtensions.data(),
 	};
 
-	VK_CHECK(vkCreateInstance(
-		&instanceCreateInfo,
-		nullptr,
-		&m_VulkanInstance
-	));
+	VK_CHECK(vkCreateInstance(&instanceCreateInfo, nullptr, &m_VulkanInstance));
 
 	volkLoadInstance(m_VulkanInstance);
 }
@@ -389,12 +333,7 @@ void RendererContext::SetupDebugMessenger()
 		.pfnUserCallback = VulkanDebugUtilsMessengerCallback,
 	};
 
-	VK_CHECK(vkCreateDebugUtilsMessengerEXT(
-		m_VulkanInstance,
-		&debugInfo,
-		nullptr,
-		&m_DebugMessenger
-	));
+	VK_CHECK(vkCreateDebugUtilsMessengerEXT(m_VulkanInstance, &debugInfo, nullptr, &m_DebugMessenger));
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -404,42 +343,21 @@ void RendererContext::SetupDebugMessenger()
 void RendererContext::PickPhysicalDevice()
 {
 	uint32_t gpuCount = 0;
-
-	vkEnumeratePhysicalDevices(
-		m_VulkanInstance,
-		&gpuCount,
-		nullptr
-	);
-
-	assert(
-		gpuCount > 0 &&
-		"Could not find any physical devices!"
-	);
-
+	vkEnumeratePhysicalDevices(m_VulkanInstance, &gpuCount, nullptr);
+	assert(gpuCount > 0 && "Could not find any physical devices!");
 	std::vector<VkPhysicalDevice> physicalDevices(gpuCount);
-
-	VK_CHECK(vkEnumeratePhysicalDevices(
-		m_VulkanInstance,
-		&gpuCount,
-		physicalDevices.data()
-	));
+	VK_CHECK(vkEnumeratePhysicalDevices(m_VulkanInstance, &gpuCount, physicalDevices.data()));
 
 	// Default to the first available GPU
-	VkPhysicalDevice selectedPhysicalDevice =
-		physicalDevices[0];
+	VkPhysicalDevice selectedPhysicalDevice = physicalDevices[0];
 
 	// Prefer a discrete GPU if one is available
 	for (VkPhysicalDevice physicalDevice : physicalDevices)
 	{
 		VkPhysicalDeviceProperties properties{};
+		vkGetPhysicalDeviceProperties(physicalDevice, &properties);
 
-		vkGetPhysicalDeviceProperties(
-			physicalDevice,
-			&properties
-		);
-
-		if (properties.deviceType ==
-			VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
+		if (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
 		{
 			selectedPhysicalDevice = physicalDevice;
 			break;
@@ -448,20 +366,10 @@ void RendererContext::PickPhysicalDevice()
 
 	m_PhysicalDevice = selectedPhysicalDevice;
 
-	vkGetPhysicalDeviceProperties(
-		m_PhysicalDevice,
-		&m_PhysicalDeviceProperties
-	);
+	vkGetPhysicalDeviceProperties(m_PhysicalDevice, &m_PhysicalDeviceProperties);
+	vkGetPhysicalDeviceFeatures(m_PhysicalDevice, &m_PhysicalDeviceFeatures);
 
-	vkGetPhysicalDeviceFeatures(
-		m_PhysicalDevice,
-		&m_PhysicalDeviceFeatures
-	);
-
-	std::println(
-		"[Renderer] Selected GPU: {}",
-		m_PhysicalDeviceProperties.deviceName
-	);
+	std::println("[Renderer] Selected GPU: {}", m_PhysicalDeviceProperties.deviceName);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -475,27 +383,10 @@ void RendererContext::CreateLogicalDevice()
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	uint32_t queueFamilyCount = 0;
-
-	vkGetPhysicalDeviceQueueFamilyProperties(
-		m_PhysicalDevice,
-		&queueFamilyCount,
-		nullptr
-	);
-
-	assert(
-		queueFamilyCount > 0 &&
-		"Physical device has no queue families!"
-	);
-
-	std::vector<VkQueueFamilyProperties> queueFamilies(
-		queueFamilyCount
-	);
-
-	vkGetPhysicalDeviceQueueFamilyProperties(
-		m_PhysicalDevice,
-		&queueFamilyCount,
-		queueFamilies.data()
-	);
+	vkGetPhysicalDeviceQueueFamilyProperties(m_PhysicalDevice, &queueFamilyCount, nullptr);
+	assert(queueFamilyCount > 0 && "Physical device has no queue families!");
+	std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+	vkGetPhysicalDeviceQueueFamilyProperties(m_PhysicalDevice, &queueFamilyCount, queueFamilies.data());
 
 	for (uint32_t i = 0; i < queueFamilyCount; i++)
 	{
@@ -506,10 +397,7 @@ void RendererContext::CreateLogicalDevice()
 		}
 	}
 
-	assert(
-		m_GraphicsFamily != UINT32_MAX &&
-		"Could not find a graphics queue family!"
-	);
+	assert(m_GraphicsFamily != UINT32_MAX && "Could not find a graphics queue family!");
 
 	constexpr float queuePriority = 1.0f;
 
@@ -555,30 +443,15 @@ void RendererContext::CreateLogicalDevice()
 		.pNext = &supportedFeatures11
 	};
 
-	vkGetPhysicalDeviceFeatures2(
-		m_PhysicalDevice,
-		&supportedFeatures
-	);
+	vkGetPhysicalDeviceFeatures2(m_PhysicalDevice, &supportedFeatures);
 
-	assert(
-		supportedFeatures13.dynamicRendering &&
-		"Dynamic rendering is not supported!"
-	);
+	assert(supportedFeatures13.dynamicRendering && "Dynamic rendering is not supported!");
+	assert(supportedFeatures13.synchronization2 && "Synchronization2 is not supported!");
 
-	assert(
-		supportedFeatures13.synchronization2 &&
-		"Synchronization2 is not supported!"
-	);
+	assert(supportedFeatures12.timelineSemaphore && "Timeline semaphores are not supported!");
+	assert(supportedFeatures12.bufferDeviceAddress && "Buffer device address is not supported!");
 
-	assert(
-		supportedFeatures12.timelineSemaphore &&
-		"Timeline semaphores are not supported!"
-	);
-
-	assert(
-		supportedFeatures12.bufferDeviceAddress &&
-		"Buffer device address is not supported!"
-	);
+	assert(supportedFeatures.features.shaderInt64 && "Shader Int64 is not supported!");
 
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	// Enabled Features
@@ -616,7 +489,10 @@ void RendererContext::CreateLogicalDevice()
 	{
 		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
 		.pNext = &features11,
-		.features = {}
+		.features =
+		{
+			.shaderInt64 = VK_TRUE
+		}
 	};
 
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -624,41 +500,17 @@ void RendererContext::CreateLogicalDevice()
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	uint32_t extensionCount = 0;
+	VK_CHECK(vkEnumerateDeviceExtensionProperties(m_PhysicalDevice, nullptr, &extensionCount, nullptr));
+	std::vector<VkExtensionProperties> extensions(extensionCount);
+	VK_CHECK(vkEnumerateDeviceExtensionProperties(m_PhysicalDevice, nullptr, &extensionCount, extensions.data()));
 
-	VK_CHECK(vkEnumerateDeviceExtensionProperties(
-		m_PhysicalDevice,
-		nullptr,
-		&extensionCount,
-		nullptr
-	));
-
-	std::vector<VkExtensionProperties> extensions(
-		extensionCount
-	);
-
-	VK_CHECK(vkEnumerateDeviceExtensionProperties(
-		m_PhysicalDevice,
-		nullptr,
-		&extensionCount,
-		extensions.data()
-	));
-
-	std::println(
-		"[Renderer] Physical device '{}' has {} extensions:",
-		m_PhysicalDeviceProperties.deviceName,
-		extensions.size()
-	);
+	std::println("[Renderer] Physical device '{}' has {} extensions:", m_PhysicalDeviceProperties.deviceName, extensions.size());
 
 	for (const auto& extension : extensions)
 	{
-		m_SupportedExtensions.emplace(
-			extension.extensionName
-		);
+		m_SupportedExtensions.emplace(extension.extensionName);
 
-		std::println(
-			"[Renderer]   {}",
-			extension.extensionName
-		);
+		std::println("[Renderer]   {}", extension.extensionName);
 	}
 
 	std::vector<const char*> deviceExtensions
@@ -666,16 +518,11 @@ void RendererContext::CreateLogicalDevice()
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME
 	};
 
-	assert(
-		IsExtensionSupported(VK_KHR_SWAPCHAIN_EXTENSION_NAME) &&
-		"VK_KHR_swapchain is not supported!"
-	);
+	assert(IsExtensionSupported(VK_KHR_SWAPCHAIN_EXTENSION_NAME) && "VK_KHR_swapchain is not supported!");
 
 	if (IsExtensionSupported(VK_EXT_DEBUG_MARKER_EXTENSION_NAME))
 	{
-		deviceExtensions.push_back(
-			VK_EXT_DEBUG_MARKER_EXTENSION_NAME
-		);
+		deviceExtensions.push_back(VK_EXT_DEBUG_MARKER_EXTENSION_NAME);
 
 		m_EnableDebugMarkers = true;
 	}
@@ -688,25 +535,14 @@ void RendererContext::CreateLogicalDevice()
 	{
 		.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
 		.pNext = &features,
-
 		.queueCreateInfoCount = 1,
 		.pQueueCreateInfos = &queueInfo,
-
-		.enabledExtensionCount =
-			static_cast<uint32_t>(deviceExtensions.size()),
-
-		.ppEnabledExtensionNames =
-			deviceExtensions.data(),
-
+		.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size()),
+		.ppEnabledExtensionNames = deviceExtensions.data(),
 		.pEnabledFeatures = nullptr
 	};
 
-	VK_CHECK(vkCreateDevice(
-		m_PhysicalDevice,
-		&deviceCreateInfo,
-		nullptr,
-		&m_LogicalDevice
-	));
+	VK_CHECK(vkCreateDevice(m_PhysicalDevice, &deviceCreateInfo, nullptr, &m_LogicalDevice));
 
 	volkLoadDevice(m_LogicalDevice);
 
@@ -714,17 +550,9 @@ void RendererContext::CreateLogicalDevice()
 	// Graphics Queue
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-	vkGetDeviceQueue(
-		m_LogicalDevice,
-		m_GraphicsFamily,
-		0,
-		&m_GraphicsQueue
-	);
+	vkGetDeviceQueue(m_LogicalDevice, m_GraphicsFamily, 0, &m_GraphicsQueue);
 
-	assert(
-		m_GraphicsQueue &&
-		"Could not get graphics queue!"
-	);
+	assert(m_GraphicsQueue && "Could not get graphics queue!");
 
 	if (m_EnableDebugMarkers)
 		std::println("[Renderer] Debug markers enabled.");
@@ -734,9 +562,7 @@ void RendererContext::CreateLogicalDevice()
 // Extensions
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-bool RendererContext::IsExtensionSupported(
-	const std::string& extensionName) const
+bool RendererContext::IsExtensionSupported(const std::string& extensionName) const
 {
-	return m_SupportedExtensions.find(extensionName) !=
-		m_SupportedExtensions.end();
+	return m_SupportedExtensions.find(extensionName) != m_SupportedExtensions.end();
 }

@@ -1,26 +1,40 @@
+struct CameraData
+{
+	float4x4 ViewProjection;
+};
+
 struct VertexInput
 {
-	float3 position : POSITION;
-	float3 color    : COLOR0;
+	float3 Position : POSITION;
+	float3 Normal   : NORMAL;
 };
 
 struct VertexOutput
 {
-	float4 position : SV_Position;
-	float3 color    : COLOR0;
+	float4 Position : SV_Position;
+	float3 Normal   : NORMAL;
+};
+
+[[vk::push_constant]]
+cbuffer PushConstants
+{
+	uint64_t CameraAddress;
 };
 
 [shader("vertex")]
 VertexOutput main(VertexInput input)
 {
+	CameraData* camera = reinterpret<CameraData*>(CameraAddress);
+
 	VertexOutput output;
-	output.position = float4(input.position, 1.0);
-	output.color    = input.color;
+	output.Position = mul(camera->ViewProjection, float4(input.Position, 1.0));
+	output.Normal   = input.Normal;
 	return output;
 }
 
 [shader("fragment")]
 float4 main(VertexOutput input) : SV_Target
 {
-	return float4(input.color, 1.0);
+	float3 color = input.Normal * 0.5 + 0.5;
+	return float4(color, 1.0);
 }

@@ -204,3 +204,24 @@ private:
 	VkBuffer m_Buffer = VK_NULL_HANDLE;
 	VmaAllocation m_Allocation = VK_NULL_HANDLE;
 };
+
+class UniformBuffer
+{
+public:
+	void Create(uint32_t size);
+	void Destroy();
+
+	void SetData(const void* data, uint32_t size, uint32_t offset = 0);
+
+	VkBuffer GetBuffer() const { return m_Buffer; }
+	VkDeviceAddress GetDeviceAddress() const { return m_DeviceAddress; }
+
+	uint64_t GetSize() const { return m_Size; }
+private:
+	VkBuffer m_Buffer = VK_NULL_HANDLE;
+	VmaAllocation m_Allocation = VK_NULL_HANDLE;
+
+	VkDeviceAddress m_DeviceAddress = 0;
+
+	uint32_t m_Size;
+};

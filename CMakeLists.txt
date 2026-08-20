@@ -36,6 +36,9 @@ else()
 	)
 endif()
 
+# ==== Add Subsystems ====
+add_subdirectory(ThirdParty)
+
 # Libraries
 target_link_libraries(VkLab PRIVATE
 		SDL3::SDL3-static
@@ -45,6 +48,3 @@ target_link_libraries(VkLab PRIVATE
 		slang::slang
 		fastgltf::fastgltf
 )
-
-# ==== Add Subsystems ====
-add_subdirectory(ThirdParty)

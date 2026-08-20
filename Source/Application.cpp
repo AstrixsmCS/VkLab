@@ -37,8 +37,9 @@ void Application::Shutdown()
 		m_Shader.reset();
 	}
 
-	m_IndexBuffer.Destroy();
-	m_VertexBuffer.Destroy();
+	m_Mesh.Destroy();
+
+	m_CameraBuffer.Destroy();
 
 	DestroyDepthImage();
 
@@ -86,6 +87,8 @@ bool Application::InitializeVulkan()
 
 	CreateDepthImage();
 
+	m_CameraBuffer.Create(sizeof(CameraData));
+
 	if (!CreateShader())
 	{
 		ShowError("Error creating shader modules.");
@@ -98,9 +101,9 @@ bool Application::InitializeVulkan()
 		return false;
 	}
 
-	if (!CreateGeometry())
+	if (!LoadMesh())
 	{
-		ShowError("Unable to create geometry buffers.");
+		ShowError("Unable to load mesh.");
 		return false;
 	}
 
@@ -117,49 +120,32 @@ bool Application::CreateShader()
 bool Application::CreateGraphicsPipeline()
 {
 	PipelineSpecification spec;
-	spec.Shader               = m_Shader;
-	spec.ColorFormats         = { Format::BGRA8_UNorm };
-	spec.DepthFormat          = Format::D32_Float;
-	spec.DepthTest            = true;
-	spec.DepthWrite           = true;
-	spec.DepthCompareOp       = CompareOp::Less;
-	spec.CullMode             = CullMode::Back;
-	spec.FrontFace            = WindingMode::CW;
-	spec.Topology             = Topology::Triangle;
-	spec.PolygonMode          = PolygonMode::Fill;
-	spec.BlendEnabled         = false;
+	spec.Shader         = m_Shader;
+	spec.ColorFormats   = { Format::BGRA8_UNorm };
+	spec.DepthFormat    = Format::D32_Float;
+	spec.DepthTest      = true;
+	spec.DepthWrite     = true;
+	spec.DepthCompareOp = CompareOp::Less;
+	spec.CullMode       = CullMode::Back;
+	spec.FrontFace      = WindingMode::CCW;
+	spec.Topology       = Topology::Triangle;
+	spec.PolygonMode    = PolygonMode::Fill;
+	spec.BlendEnabled   = false;
 	spec.Layout         =
 	{
-		{ ShaderDataType::Float3, "Position" },
-		{ ShaderDataType::Float3, "Color"    },
-	};
-	spec.DebugName            = "Quad Pipeline";
+			{ ShaderDataType::Float3, "Position" },
+			{ ShaderDataType::Float3, "Normal"   },
+		};
+	spec.DebugName = "Mesh Pipeline";
 
 	m_Pipeline.Create(spec);
 
 	return m_Pipeline.GetPipeline() != VK_NULL_HANDLE;
 }
 
-bool Application::CreateGeometry()
+bool Application::LoadMesh()
 {
-	const Vertex vertices[]
-	{
-		{ { -0.5f, -0.5f, 0.0f }, { 1.0f, 0.0f, 0.0f } },  // 0 top-left
-		{ {  0.5f, -0.5f, 0.0f }, { 0.0f, 1.0f, 0.0f } },  // 1 top-right
-		{ {  0.5f,  0.5f, 0.0f }, { 0.0f, 0.0f, 1.0f } },  // 2 bottom-right
-		{ { -0.5f,  0.5f, 0.0f }, { 1.0f, 1.0f, 0.0f } },  // 3 bottom-left
-	};
-
-	const uint32_t indices[]
-	{
-		0, 1, 2,
-		2, 3, 0,
-	};
-
-	m_VertexBuffer.Create(vertices, sizeof(vertices));
-	m_IndexBuffer.Create(indices, sizeof(indices));
-
-	return m_VertexBuffer.GetBuffer() != VK_NULL_HANDLE && m_IndexBuffer.GetBuffer()  != VK_NULL_HANDLE;
+	return m_Mesh.Load("Resources/Meshes/DamagedHelmet/DamagedHelmet.glb");
 }
 
 void Application::CreateDepthImage()
@@ -245,6 +231,12 @@ void Application::Render()
 	SwapChain& swapChain = m_Renderer.GetSwapChain();
 	const VkExtent2D extent = swapChain.GetExtent();
 
+	const float aspectRatio = static_cast<float>(extent.width) / static_cast<float>(extent.height);
+	const CameraData cameraData = m_Camera.GetData(aspectRatio);
+	m_CameraBuffer.SetData(&cameraData, sizeof(CameraData));
+
+	const VkDeviceAddress cameraAddress = m_CameraBuffer.GetDeviceAddress();
+
 	SetImageLayout(
 		cmd,
 		swapChain.GetCurrentImage(),
@@ -303,11 +295,24 @@ void Application::Render()
 
 		m_Pipeline.Bind(cmd);
 
-		const VkBuffer     vertexBuffers[] = { m_VertexBuffer.GetBuffer() };
-		const VkDeviceSize offsets[]       = { 0 };
-		vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
-		vkCmdBindIndexBuffer(cmd, m_IndexBuffer.GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
-		vkCmdDrawIndexed(cmd, m_IndexBuffer.GetCount(), 1, 0, 0, 0);
+		vkCmdPushConstants(cmd, m_Pipeline.GetLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VkDeviceAddress), &cameraAddress);
+
+		const VkBuffer     vertexBuffer = m_Mesh.GetVertexBuffer();
+		const VkDeviceSize offset       = 0;
+		vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer, &offset);
+		vkCmdBindIndexBuffer(cmd, m_Mesh.GetIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
+
+		// Draw each submesh
+		for (const Submesh& submesh : m_Mesh.GetSubmeshes())
+		{
+			vkCmdDrawIndexed(
+				cmd,
+				submesh.IndexCount,
+				1,
+				submesh.BaseIndex,
+				static_cast<int32_t>(submesh.BaseVertex),
+				0);
+		}
 	}
 	DynamicRendering::EndRendering(cmd);
 

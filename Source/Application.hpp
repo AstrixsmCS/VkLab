@@ -9,16 +9,35 @@
 #include "Renderer/GraphicsPipeline.hpp"
 #include "Renderer/Buffer.hpp"
 #include "Renderer/Renderer.hpp"
+#include "Renderer/Mesh.hpp"
 
 #include <string>
 #include <array>
 
 struct SDL_Window;
 
-struct Vertex
+struct CameraData
 {
-	float Position[3];
-	float Color[3];
+	glm::mat4 ViewProjection{ 1.0f };
+};
+
+struct Camera
+{
+	glm::vec3 Position{ 0.0f, 0.0f, 3.0f };
+	glm::vec3 Target  { 0.0f, 0.0f, 0.0f };
+
+	float FovY = glm::radians(60.0f);
+	float Near = 0.1f;
+	float Far  = 500.0f;
+
+	CameraData GetData(float aspectRatio) const
+	{
+		glm::mat4 view = glm::lookAt(Position, Target, glm::vec3(0.0f, 1.0f, 0.0f));
+		glm::mat4 proj = glm::perspective(FovY, aspectRatio, Near, Far);
+		proj[1][1] *= -1.0f;  // Vulkan Y flip
+
+		return CameraData{ proj * view };
+	}
 };
 
 class Application
@@ -33,7 +52,7 @@ private:
 	bool           InitializeVulkan();
 	bool           CreateShader();
 	bool           CreateGraphicsPipeline();
-	bool           CreateGeometry();
+	bool LoadMesh();
 
 	void CreateDepthImage();
 	void DestroyDepthImage();
@@ -45,18 +64,16 @@ private:
 	uint32_t    m_Height  = 720;
 	bool        m_Running = false;
 
-	// Renderer
 	Renderer  m_Renderer;
 
-	// Pipeline
 	Pipeline m_Pipeline;
 
-	// Shader
 	std::shared_ptr<Shader> m_Shader;
 
-	// Geometry
-	VertexBuffer m_VertexBuffer;
-	IndexBuffer  m_IndexBuffer;
+	Mesh m_Mesh;
+
+	Camera       m_Camera;
+	UniformBuffer m_CameraBuffer;
 
 	struct DepthImage
 	{

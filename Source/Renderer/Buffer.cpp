@@ -1,5 +1,7 @@
 #include "Buffer.hpp"
 
+#include "RendererContext.hpp"
+
 #include <vma/vk_mem_alloc.h>
 
 #include <cassert>
@@ -154,4 +156,70 @@ void IndexBuffer::Destroy()
 	m_Allocation = VK_NULL_HANDLE;
 
 	m_Size = 0;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Uniform Buffer
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void UniformBuffer::Create(uint32_t size)
+{
+	assert(size > 0);
+
+	m_Size = size;
+
+	VkBufferCreateInfo bufferInfo
+	{
+		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+		.size = size,
+		.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+		.sharingMode = VK_SHARING_MODE_EXCLUSIVE
+	};
+
+	VmaAllocationCreateInfo allocationInfo
+	{
+		.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
+		.usage = VMA_MEMORY_USAGE_AUTO
+	};
+
+	VK_CHECK(vmaCreateBuffer(Allocator::GetAllocator(), &bufferInfo, &allocationInfo, &m_Buffer, &m_Allocation, nullptr));
+
+	VkBufferDeviceAddressInfo addressInfo
+	{
+		.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+		.buffer = m_Buffer
+	};
+
+	m_DeviceAddress = vkGetBufferDeviceAddress(RendererContext::Get().GetDevice(), &addressInfo);
+
+	assert(m_DeviceAddress != 0);
+}
+
+void UniformBuffer::Destroy()
+{
+	if (m_Buffer == VK_NULL_HANDLE)
+		return;
+
+	vmaDestroyBuffer(Allocator::GetAllocator(), m_Buffer, m_Allocation);
+
+	m_Buffer = VK_NULL_HANDLE;
+	m_Allocation = VK_NULL_HANDLE;
+
+	m_DeviceAddress = 0;
+	m_Size = 0;
+}
+
+void UniformBuffer::SetData(const void* data, uint32_t size, uint32_t offset)
+{
+	assert(data);
+	assert(size > 0);
+	assert(offset + size <= m_Size);
+
+	void* mappedData = nullptr;
+
+	VK_CHECK(vmaMapMemory(Allocator::GetAllocator(), m_Allocation, &mappedData));
+
+	std::memcpy(static_cast<uint8_t*>(mappedData) + offset, data, size);
+
+	vmaUnmapMemory(Allocator::GetAllocator(), m_Allocation);
 }

@@ -284,13 +284,20 @@ void Pipeline::CreatePipelineLayout()
 {
 	VkDevice device = RendererContext::Get().GetDevice();
 
+	VkPushConstantRange pushConstantRange
+	{
+		.stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+		.offset     = 0,
+		.size       = sizeof(uint64_t)  // device address
+	};
+
 	VkPipelineLayoutCreateInfo layoutInfo
 	{
 		.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 		.setLayoutCount         = 0,
 		.pSetLayouts            = nullptr,
-		.pushConstantRangeCount = 0,
-		.pPushConstantRanges    = nullptr
+		.pushConstantRangeCount = 1, //TODO: Slang Reflection
+		.pPushConstantRanges    = &pushConstantRange //TODO: Slang Reflection
 	};
 
 	VK_CHECK(vkCreatePipelineLayout(device, &layoutInfo, nullptr, &m_PipelineLayout));
