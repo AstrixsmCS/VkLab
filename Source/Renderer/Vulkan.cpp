@@ -280,6 +280,7 @@ VkFilter ToVulkan(SamplerFilter filter)
 	{
 		case SamplerFilter::Nearest: return VK_FILTER_NEAREST;
 		case SamplerFilter::Linear:  return VK_FILTER_LINEAR;
+		case SamplerFilter::Cubic:   return VK_FILTER_CUBIC_EXT;
 	}
 
 	return VK_FILTER_LINEAR;

@@ -48,7 +48,6 @@ static void ExtractTRS(const fastgltf::Node& gltfNode, Node& node)
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Mesh
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 bool Mesh::Load(const std::filesystem::path& path)
 {
 	if (!std::filesystem::exists(path))
@@ -68,12 +67,13 @@ bool Mesh::Load(const std::filesystem::path& path)
 	if (dataResult.error() != fastgltf::Error::None)
 	{
 		std::println("[Mesh] Failed to read file '{}': {}", path.string(), fastgltf::getErrorMessage(dataResult.error()));
+
 		return false;
 	}
 
 	const std::string ext = path.extension().string();
 
-	fastgltf::Expected<fastgltf::Asset> assetResult{ fastgltf::Error::None };
+	fastgltf::Expected<fastgltf::Asset> assetResult { fastgltf::Error::None };
 
 	if (ext == ".glb")
 	{
@@ -103,16 +103,26 @@ bool Mesh::Load(const std::filesystem::path& path)
 	// Geometry
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-	for (const fastgltf::Mesh& gltfMesh : asset.meshes)
+	std::vector<std::vector<uint32_t>> meshSubmeshes(asset.meshes.size());
+
+	for (size_t meshIndex = 0; meshIndex < asset.meshes.size(); meshIndex++)
 	{
+		const fastgltf::Mesh& gltfMesh = asset.meshes[meshIndex];
+
 		for (const fastgltf::Primitive& primitive : gltfMesh.primitives)
 		{
 			if (primitive.type != fastgltf::PrimitiveType::Triangles)
 				continue;
 
-			Submesh& submesh   = m_Submeshes.emplace_back();
+			const uint32_t submeshIndex = static_cast<uint32_t>(m_Submeshes.size());
+
+			meshSubmeshes[meshIndex].push_back(submeshIndex);
+
+			Submesh& submesh = m_Submeshes.emplace_back();
+
 			submesh.BaseVertex = static_cast<uint32_t>(m_Vertices.size());
-			submesh.BaseIndex  = static_cast<uint32_t>(m_Indices.size());
+
+			submesh.BaseIndex = static_cast<uint32_t>(m_Indices.size());
 
 			// Positions
 			{
@@ -163,7 +173,7 @@ bool Mesh::Load(const std::filesystem::path& path)
 					asset, accessor,
 					[&](uint32_t index, size_t i)
 					{
-						m_Indices[indexStart + i] = submesh.BaseVertex + index;
+						m_Indices[indexStart + i] = index;
 					});
 
 				submesh.IndexCount = static_cast<uint32_t>(accessor.count);
@@ -174,81 +184,126 @@ bool Mesh::Load(const std::filesystem::path& path)
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	// Nodes
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 	m_Nodes.emplace_back();
-	m_Nodes[0].Name   = m_Name;
+
+	m_Nodes[0].Name = m_Name;
 	m_Nodes[0].Parent = UINT32_MAX;
+	m_Nodes[0].LocalTransform = glm::mat4(1.0f);
+	m_Nodes[0].WorldTransform = glm::mat4(1.0f);
 
-	const uint32_t nodeOffset = 1;
+	constexpr uint32_t nodeOffset = 1;
 
-	m_Nodes.resize(asset.nodes.size() + 1);
+	m_Nodes.resize(asset.nodes.size() + nodeOffset);
 
+	// Create Nodes
 	for (size_t i = 0; i < asset.nodes.size(); i++)
 	{
 		const fastgltf::Node& gltfNode = asset.nodes[i];
-		Node& node = m_Nodes[nodeOffset + i];
+		Node& node = m_Nodes[nodeOffset + static_cast<uint32_t>(i)];
 
 		node.Name = gltfNode.name;
 
 		ExtractTRS(gltfNode, node);
 		node.LocalTransform = NodeToMatrix(gltfNode);
 
+		// Children
 		for (size_t childIndex : gltfNode.children)
-			node.Children.push_back(static_cast<uint32_t>(nodeOffset + childIndex));
+		{
+			node.Children.push_back(nodeOffset + static_cast<uint32_t>(childIndex));
+		}
+
+		// Mesh / Submeshes
 
 		if (gltfNode.meshIndex.has_value())
 		{
-			uint32_t submeshIndex = 0;
-			for (size_t m = 0; m < gltfNode.meshIndex.value(); m++)
-				submeshIndex += static_cast<uint32_t>(asset.meshes[m].primitives.size());
+			const size_t meshIndex = gltfNode.meshIndex.value();
 
-			const fastgltf::Mesh& gltfMesh = asset.meshes[gltfNode.meshIndex.value()];
-			for (size_t p = 0; p < gltfMesh.primitives.size(); p++)
-				node.Submeshes.push_back(submeshIndex + static_cast<uint32_t>(p));
+			assert(meshIndex < meshSubmeshes.size());
+
+			for (uint32_t submeshIndex : meshSubmeshes[meshIndex])
+			{
+				node.Submeshes.push_back(submeshIndex);
+			}
 		}
 	}
 
-	// Wire top-level scene nodes to the synthetic root.
-	if (!asset.scenes.empty())
-	{
-		const fastgltf::Scene& scene = asset.scenes[asset.defaultScene.value_or(0)];
-
-		for (size_t nodeIndex : scene.nodeIndices)
-		{
-			const uint32_t mappedIndex = nodeOffset + static_cast<uint32_t>(nodeIndex);
-			m_Nodes[0].Children.push_back(mappedIndex);
-			m_Nodes[mappedIndex].Parent = 0;
-		}
-	}
-
+	// Parent Relationships
 	for (size_t i = 0; i < asset.nodes.size(); i++)
 	{
-		for (uint32_t childIndex : m_Nodes[nodeOffset + i].Children)
-			m_Nodes[childIndex].Parent = nodeOffset + static_cast<uint32_t>(i);
+		const uint32_t parentIndex = nodeOffset + static_cast<uint32_t>(i);
+
+		const Node& parent = m_Nodes[parentIndex];
+
+		for (uint32_t childIndex : parent.Children)
+		{
+			assert(childIndex < m_Nodes.size());
+
+			m_Nodes[childIndex].Parent = parentIndex;
+		}
 	}
 
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// World Transforms
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-	TraverseNodes([&](const Node& node)
+	// Scene Roots
+	if (!asset.scenes.empty())
 	{
-		const uint32_t index = static_cast<uint32_t>(&node - m_Nodes.data());
+		const size_t sceneIndex = asset.defaultScene.value_or(0);
 
-		m_Nodes[index].WorldTransform = node.IsRoot()
-			? node.LocalTransform
-			: m_Nodes[node.Parent].WorldTransform * node.LocalTransform;
-	});
+		assert(sceneIndex < asset.scenes.size());
 
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		const fastgltf::Scene& scene = asset.scenes[sceneIndex];
+
+		for (size_t gltfNodeIndex : scene.nodeIndices)
+		{
+			const uint32_t nodeIndex = nodeOffset + static_cast<uint32_t>(gltfNodeIndex);
+
+			assert(nodeIndex < m_Nodes.size());
+
+			m_Nodes[0].Children.push_back(nodeIndex);
+
+			m_Nodes[nodeIndex].Parent = 0;
+		}
+	}
+	else
+	{
+		for (size_t i = 0; i < asset.nodes.size(); i++)
+		{
+			const uint32_t nodeIndex = nodeOffset + static_cast<uint32_t>(i);
+
+			if (m_Nodes[nodeIndex].Parent != UINT32_MAX)
+				continue;
+
+			m_Nodes[0].Children.push_back(nodeIndex);
+
+			m_Nodes[nodeIndex].Parent = 0;
+		}
+	}
+
+	// World Transforms
+	std::function<void(uint32_t, const glm::mat4&)> updateTransforms = [&](uint32_t nodeIndex, const glm::mat4& parentTransform)
+	{
+		assert(nodeIndex < m_Nodes.size());
+
+		Node& node = m_Nodes[nodeIndex];
+
+		node.WorldTransform = parentTransform * node.LocalTransform;
+
+		for (uint32_t childIndex : node.Children)
+		{
+			updateTransforms(childIndex, node.WorldTransform);
+		}
+	};
+
+	updateTransforms(0, glm::mat4(1.0f));
+
 	// GPU Upload
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 	if (!m_Vertices.empty())
+	{
 		m_VertexBuffer.Create(m_Vertices.data(), m_Vertices.size() * sizeof(Vertex));
+	}
 
 	if (!m_Indices.empty())
+	{
 		m_IndexBuffer.Create(m_Indices.data(), m_Indices.size() * sizeof(uint32_t));
+	}
 
 	std::println("[Mesh] Loaded '{}' - {} vertices, {} indices, {} submeshes, {} nodes",
 		m_Name,

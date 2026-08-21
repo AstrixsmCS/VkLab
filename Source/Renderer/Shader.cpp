@@ -1,5 +1,7 @@
 #include "Shader.hpp"
 
+#include <map>
+
 #include "RendererContext.hpp"
 #include "ShaderCompiler.hpp"
 
@@ -14,6 +16,7 @@ void Shader::Load(const std::filesystem::path& filePath)
 
 	m_SpirV = std::move(result.SpirV);
 	m_Stages = std::move(result.Stages);
+	m_ReflectionData = std::move(result.Reflection);
 
 	CreateShaderModule();
 	CreateStageInfos();
@@ -25,6 +28,7 @@ void Shader::Shutdown()
 
 	m_SpirV.clear();
 	m_Stages.clear();
+	m_ReflectionData = {};
 	m_Path.clear();
 }
 
@@ -34,6 +38,7 @@ void Shader::Reload()
 
 	m_SpirV.clear();
 	m_Stages.clear();
+	m_ReflectionData = {};
 
 	ShaderCompileResult result = ShaderCompiler::Compile(m_Path);
 
@@ -42,6 +47,7 @@ void Shader::Reload()
 
 	m_SpirV = std::move(result.SpirV);
 	m_Stages = std::move(result.Stages);
+	m_ReflectionData = std::move(result.Reflection);
 
 	CreateShaderModule();
 	CreateStageInfos();

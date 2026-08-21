@@ -133,9 +133,9 @@ bool Application::CreateGraphicsPipeline()
 	spec.BlendEnabled   = false;
 	spec.Layout         =
 	{
-			{ ShaderDataType::Float3, "Position" },
-			{ ShaderDataType::Float3, "Normal"   },
-		};
+		{ ShaderDataType::Float3, "Position" },
+		{ ShaderDataType::Float3, "Normal"   },
+	};
 	spec.DebugName = "Mesh Pipeline";
 
 	m_Pipeline.Create(spec);
@@ -295,7 +295,11 @@ void Application::Render()
 
 		m_Pipeline.Bind(cmd);
 
-		vkCmdPushConstants(cmd, m_Pipeline.GetLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(VkDeviceAddress), &cameraAddress);
+		const auto& ranges = m_Shader->GetPushConstantRanges();
+		assert(!ranges.empty());
+		const auto& range = ranges[0];
+
+		vkCmdPushConstants(cmd, m_Pipeline.GetLayout(), range.StageFlags, range.Offset, range.Size, &cameraAddress);
 
 		const VkBuffer     vertexBuffer = m_Mesh.GetVertexBuffer();
 		const VkDeviceSize offset       = 0;
@@ -305,13 +309,7 @@ void Application::Render()
 		// Draw each submesh
 		for (const Submesh& submesh : m_Mesh.GetSubmeshes())
 		{
-			vkCmdDrawIndexed(
-				cmd,
-				submesh.IndexCount,
-				1,
-				submesh.BaseIndex,
-				static_cast<int32_t>(submesh.BaseVertex),
-				0);
+			vkCmdDrawIndexed(cmd, submesh.IndexCount, 1, submesh.BaseIndex, static_cast<int32_t>(submesh.BaseVertex), 0);
 		}
 	}
 	DynamicRendering::EndRendering(cmd);

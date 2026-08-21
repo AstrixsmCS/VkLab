@@ -23,18 +23,19 @@ struct CameraData
 
 struct Camera
 {
-	glm::vec3 Position{ 0.0f, 0.0f, 3.0f };
-	glm::vec3 Target  { 0.0f, 0.0f, 0.0f };
+	glm::vec3 Position{ 0.0f, 0.0f, -3.0f };
+	glm::vec3 Target  { 0.0f, 0.0f,  0.0f };
 
 	float FovY = glm::radians(60.0f);
 	float Near = 0.1f;
-	float Far  = 500.0f;
+	float Far  = 1000.0f;
 
 	CameraData GetData(float aspectRatio) const
 	{
 		glm::mat4 view = glm::lookAt(Position, Target, glm::vec3(0.0f, 1.0f, 0.0f));
 		glm::mat4 proj = glm::perspective(FovY, aspectRatio, Near, Far);
-		proj[1][1] *= -1.0f;  // Vulkan Y flip
+
+		proj[1][1] *= -1.0f;
 
 		return CameraData{ proj * view };
 	}

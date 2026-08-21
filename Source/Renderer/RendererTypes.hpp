@@ -212,7 +212,8 @@ enum class TextureType : uint8_t
 enum class SamplerFilter : uint8_t
 {
 	Nearest = 0,
-	Linear
+	Linear,
+	Cubic
 };
 
 enum class SamplerMip : uint8_t

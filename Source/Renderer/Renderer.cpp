@@ -82,13 +82,10 @@ void Renderer::EndFrame()
 	const VkSubmitInfo2 submitInfo
 	{
 		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
-
 		.waitSemaphoreInfoCount = 1,
 		.pWaitSemaphoreInfos = &imageAvailableWait,
-
 		.commandBufferInfoCount = 1,
 		.pCommandBufferInfos = &commandBufferInfo,
-
 		.signalSemaphoreInfoCount = 2,
 		.pSignalSemaphoreInfos = signalInfos,
 	};

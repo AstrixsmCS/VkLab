@@ -284,20 +284,28 @@ void Pipeline::CreatePipelineLayout()
 {
 	VkDevice device = RendererContext::Get().GetDevice();
 
-	VkPushConstantRange pushConstantRange
+	const auto& reflectedPushConstants = m_Specification.Shader->GetPushConstantRanges();
+
+	std::vector<VkPushConstantRange> pushConstantRanges;
+	pushConstantRanges.reserve(reflectedPushConstants.size());
+
+	for (const PushConstantRange& range : reflectedPushConstants)
 	{
-		.stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-		.offset     = 0,
-		.size       = sizeof(uint64_t)  // device address
-	};
+		pushConstantRanges.push_back(
+		{
+			.stageFlags = range.StageFlags,
+			.offset     = range.Offset,
+			.size       = range.Size
+		});
+	}
 
 	VkPipelineLayoutCreateInfo layoutInfo
 	{
 		.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 		.setLayoutCount         = 0,
 		.pSetLayouts            = nullptr,
-		.pushConstantRangeCount = 1, //TODO: Slang Reflection
-		.pPushConstantRanges    = &pushConstantRange //TODO: Slang Reflection
+		.pushConstantRangeCount = static_cast<uint32_t>(pushConstantRanges.size()),
+		.pPushConstantRanges    = pushConstantRanges.empty() ? nullptr : pushConstantRanges.data()
 	};
 
 	VK_CHECK(vkCreatePipelineLayout(device, &layoutInfo, nullptr, &m_PipelineLayout));
