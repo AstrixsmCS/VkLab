@@ -11,6 +11,9 @@
 #include "Renderer/Renderer.hpp"
 #include "Renderer/Mesh.hpp"
 
+#include "Renderer/Image.hpp"
+#include "Renderer/Texture.hpp"
+
 #include <string>
 #include <array>
 
@@ -21,9 +24,16 @@ struct CameraData
 	glm::mat4 ViewProjection{ 1.0f };
 };
 
+struct PushConstants
+{
+	VkDeviceAddress CameraAddress = 0;
+
+	alignas(16) glm::mat4 Model{ 1.0f };
+};
+
 struct Camera
 {
-	glm::vec3 Position{ 0.0f, 0.0f, -3.0f };
+	glm::vec3 Position{ 0.0f, 0.0f, 3.0f };
 	glm::vec3 Target  { 0.0f, 0.0f,  0.0f };
 
 	float FovY = glm::radians(60.0f);
@@ -73,13 +83,8 @@ private:
 
 	Mesh m_Mesh;
 
-	Camera       m_Camera;
+	Camera        m_Camera;
 	UniformBuffer m_CameraBuffer;
 
-	struct DepthImage
-	{
-		VkImage Image = VK_NULL_HANDLE;
-		VmaAllocation Allocation = VK_NULL_HANDLE;
-		VkImageView ImageView = VK_NULL_HANDLE;
-	} m_DepthStencil;
+	Image m_DepthImage;
 };

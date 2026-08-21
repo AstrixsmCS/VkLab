@@ -19,6 +19,7 @@ struct VertexOutput
 cbuffer PushConstants
 {
 	uint64_t CameraAddress;
+	float4x4 Model;
 };
 
 [shader("vertex")]
@@ -26,9 +27,12 @@ VertexOutput main(VertexInput input)
 {
 	CameraData* camera = reinterpret<CameraData*>(CameraAddress);
 
+	float4 worldPosition = mul(Model, float4(input.Position, 1.0));
+
 	VertexOutput output;
-	output.Position = mul(camera->ViewProjection, float4(input.Position, 1.0));
-	output.Normal   = input.Normal;
+	output.Position = mul(camera->ViewProjection, worldPosition);
+	output.Normal   = normalize(mul((float3x3)Model, input.Normal));
+
 	return output;
 }
 

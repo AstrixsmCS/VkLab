@@ -49,3 +49,8 @@ target_link_libraries(slang INTERFACE ${SLANG_LIB}
 set(FASTGLTF_COMPILE_AS_CPP20 ON)
 
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/fastgltf SYSTEM)
+
+# ==== stb (Single header libraries) ====
+add_library(stb INTERFACE)
+target_include_directories(stb INTERFACE ${CMAKE_CURRENT_LIST_DIR}/stb)
+add_library(stb::stb ALIAS stb)

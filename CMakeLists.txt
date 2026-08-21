@@ -47,4 +47,5 @@ target_link_libraries(VkLab PRIVATE
 		Vulkan::volk
 		slang::slang
 		fastgltf::fastgltf
+		stb::stb
 )

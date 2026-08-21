@@ -150,75 +150,27 @@ bool Application::LoadMesh()
 
 void Application::CreateDepthImage()
 {
-	VkDevice device = RendererContext::Get().GetDevice();
-
 	SwapChain& swapChain = m_Renderer.GetSwapChain();
 	const VkExtent2D extent = swapChain.GetExtent();
 
-	VkImageCreateInfo depthImageInfo
+	ImageSpecification specification
 	{
-		.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-		.imageType = VK_IMAGE_TYPE_2D,
-		.format = VK_FORMAT_D32_SFLOAT,
-		.extent =
-		{
-			.width = extent.width,
-			.height = extent.height,
-			.depth = 1
-		},
-		.mipLevels = 1,
-		.arrayLayers = 1,
-		.samples = VK_SAMPLE_COUNT_1_BIT,
-		.tiling = VK_IMAGE_TILING_OPTIMAL,
-		.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-		.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-		.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
-	};
+		.DebugName = "Depth Image",
+		.Format = Format::D32_Float,
+		.Usage = ImageUsage::Attachment,
+		.Width = extent.width,
+		.Height = extent.height,
+		.Mips = 1,
+		.Layers = 1,
+		.Transfer = false
+	 };
 
-	VmaAllocationCreateInfo allocationInfo
-	{
-		.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
-	};
-
-	VK_CHECK(vmaCreateImage(Allocator::GetAllocator(), &depthImageInfo, &allocationInfo, &m_DepthStencil.Image, &m_DepthStencil.Allocation, nullptr));
-
-	VkImageViewCreateInfo depthViewInfo
-	{
-		.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-		.image = m_DepthStencil.Image,
-		.viewType = VK_IMAGE_VIEW_TYPE_2D,
-		.format = VK_FORMAT_D32_SFLOAT,
-		.subresourceRange =
-		{
-			.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
-			.baseMipLevel = 0,
-			.levelCount = 1,
-			.baseArrayLayer = 0,
-			.layerCount = 1
-		}
-	};
-
-	VK_CHECK(vkCreateImageView(device, &depthViewInfo, nullptr, &m_DepthStencil.ImageView));
+	m_DepthImage.Create(specification);
 }
 
 void Application::DestroyDepthImage()
 {
-	VkDevice device = RendererContext::Get().GetDevice();
-
-	if (m_DepthStencil.ImageView)
-	{
-		vkDestroyImageView(device, m_DepthStencil.ImageView, nullptr);
-
-		m_DepthStencil.ImageView = VK_NULL_HANDLE;
-	}
-
-	if (m_DepthStencil.Image)
-	{
-		vmaDestroyImage(Allocator::GetAllocator(), m_DepthStencil.Image, m_DepthStencil.Allocation);
-
-		m_DepthStencil.Image = VK_NULL_HANDLE;
-		m_DepthStencil.Allocation = VK_NULL_HANDLE;
-	}
+	m_DepthImage.Destroy();
 }
 
 void Application::Render()
@@ -235,8 +187,6 @@ void Application::Render()
 	const CameraData cameraData = m_Camera.GetData(aspectRatio);
 	m_CameraBuffer.SetData(&cameraData, sizeof(CameraData));
 
-	const VkDeviceAddress cameraAddress = m_CameraBuffer.GetDeviceAddress();
-
 	SetImageLayout(
 		cmd,
 		swapChain.GetCurrentImage(),
@@ -248,7 +198,7 @@ void Application::Render()
 
 	SetImageLayout(
 		cmd,
-		m_DepthStencil.Image,
+		m_DepthImage.GetImage(),
 		VK_IMAGE_ASPECT_DEPTH_BIT,
 		VK_IMAGE_LAYOUT_UNDEFINED,
 		VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
@@ -267,8 +217,8 @@ void Application::Render()
 
 	AttachmentInfo depthAttachment
 	{
-		.ImageView  = m_DepthStencil.ImageView,
-		.Format     = Format::D32_Float,
+		.ImageView  = m_DepthImage.GetView(),
+		.Format     = m_DepthImage.GetFormat(),
 		.LoadOp     = LoadOp::Clear,
 		.StoreOp    = StoreOp::DontCare,
 		.ClearValue = { .depthStencil = { .depth = 1.0f, .stencil = 0 } },
@@ -298,19 +248,37 @@ void Application::Render()
 		const auto& ranges = m_Shader->GetPushConstantRanges();
 		assert(!ranges.empty());
 		const auto& range = ranges[0];
+		assert(range.Size == sizeof(PushConstants));
 
-		vkCmdPushConstants(cmd, m_Pipeline.GetLayout(), range.StageFlags, range.Offset, range.Size, &cameraAddress);
-
-		const VkBuffer     vertexBuffer = m_Mesh.GetVertexBuffer();
-		const VkDeviceSize offset       = 0;
+		const VkBuffer vertexBuffer = m_Mesh.GetVertexBuffer();
+		const VkDeviceSize offset = 0;
 		vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer, &offset);
 		vkCmdBindIndexBuffer(cmd, m_Mesh.GetIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
 
-		// Draw each submesh
-		for (const Submesh& submesh : m_Mesh.GetSubmeshes())
+		const auto& submeshes = m_Mesh.GetSubmeshes();
+
+		const glm::mat4 modelScale = glm::scale(glm::mat4(1.0f), glm::vec3(1.0f));
+
+		m_Mesh.TraverseNodes(
+		[&](const Node& node)
 		{
-			vkCmdDrawIndexed(cmd, submesh.IndexCount, 1, submesh.BaseIndex, static_cast<int32_t>(submesh.BaseVertex), 0);
-		}
+			for (uint32_t submeshIndex : node.Submeshes)
+			{
+				assert(submeshIndex < submeshes.size());
+
+				const Submesh& submesh = submeshes[submeshIndex];
+
+				PushConstants pushConstants
+				{
+					.CameraAddress = m_CameraBuffer.GetDeviceAddress(),
+					.Model = modelScale * node.WorldTransform
+				};
+
+				vkCmdPushConstants(cmd, m_Pipeline.GetLayout(), range.StageFlags, range.Offset, sizeof(PushConstants), &pushConstants);
+
+				vkCmdDrawIndexed(cmd, submesh.IndexCount, 1, submesh.BaseIndex, static_cast<int32_t>(submesh.BaseVertex), 0);
+			}
+		});
 	}
 	DynamicRendering::EndRendering(cmd);
 

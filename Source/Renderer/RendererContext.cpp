@@ -451,6 +451,12 @@ void RendererContext::CreateLogicalDevice()
 	assert(supportedFeatures12.timelineSemaphore && "Timeline semaphores are not supported!");
 	assert(supportedFeatures12.bufferDeviceAddress && "Buffer device address is not supported!");
 
+	assert(supportedFeatures12.runtimeDescriptorArray && "Runtime descriptor arrays are not supported!");
+	assert(supportedFeatures12.descriptorBindingPartiallyBound && "Partially-bound descriptors are not supported!");
+	assert(supportedFeatures12.descriptorBindingSampledImageUpdateAfterBind && "Sampled-image update-after-bind is not supported!");
+	assert(supportedFeatures12.descriptorBindingStorageImageUpdateAfterBind && "Storage-image update-after-bind is not supported!");
+	assert(supportedFeatures12.shaderSampledImageArrayNonUniformIndexing && "Non-uniform sampled image indexing is not supported!");
+
 	assert(supportedFeatures.features.shaderInt64 && "Shader Int64 is not supported!");
 
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -475,8 +481,13 @@ void RendererContext::CreateLogicalDevice()
 	{
 		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
 		.pNext = &features13,
+		.shaderSampledImageArrayNonUniformIndexing = VK_TRUE,
+		.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE,
+		.descriptorBindingStorageImageUpdateAfterBind = VK_TRUE,
+		.descriptorBindingPartiallyBound = VK_TRUE,
+		.runtimeDescriptorArray = VK_TRUE,
 		.timelineSemaphore = VK_TRUE,
-		.bufferDeviceAddress = VK_TRUE
+		.bufferDeviceAddress = VK_TRUE,
 	};
 
 	VkPhysicalDeviceVulkan11Features features11
