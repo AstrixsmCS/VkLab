@@ -2,6 +2,8 @@
 
 #include "RendererContext.hpp"
 
+#include "Descriptors.hpp"
+
 static VkFormat ShaderDataTypeToVulkanFormat(ShaderDataType type)
 {
 	switch (type)
@@ -299,11 +301,13 @@ void Pipeline::CreatePipelineLayout()
 		});
 	}
 
+	const VkDescriptorSetLayout descriptorSetLayout = Descriptor::GetLayout();
+
 	VkPipelineLayoutCreateInfo layoutInfo
 	{
 		.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-		.setLayoutCount         = 0,
-		.pSetLayouts            = nullptr,
+		.setLayoutCount         = 1,
+		.pSetLayouts            = &descriptorSetLayout,
 		.pushConstantRangeCount = static_cast<uint32_t>(pushConstantRanges.size()),
 		.pPushConstantRanges    = pushConstantRanges.empty() ? nullptr : pushConstantRanges.data()
 	};

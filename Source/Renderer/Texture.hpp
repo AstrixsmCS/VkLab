@@ -47,7 +47,8 @@ public:
 
 	Format GetFormat() const { return m_Image.GetFormat(); }
 
-	uint32_t GetBindlessIndex() const { return m_BindlessIndex; }
+	uint32_t GetTextureIndex() const { return m_TextureIndex; }
+	uint32_t GetSamplerIndex() const { return m_SamplerIndex; }
 
 	const TextureSpecification& GetSpecification() const { return m_Specification; }
 private:

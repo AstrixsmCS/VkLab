@@ -100,43 +100,42 @@ namespace
 		}
 	}
 
-	VkShaderStageFlags SlangStageToVulkan(SlangStage stage)
+	VkShaderStageFlags ShaderStageToVulkan(ShaderStage stage)
 	{
 		switch (stage)
 		{
-			case SLANG_STAGE_VERTEX:         return VK_SHADER_STAGE_VERTEX_BIT;
-			case SLANG_STAGE_FRAGMENT:       return VK_SHADER_STAGE_FRAGMENT_BIT;
-			case SLANG_STAGE_COMPUTE:        return VK_SHADER_STAGE_COMPUTE_BIT;
-			case SLANG_STAGE_RAY_GENERATION: return VK_SHADER_STAGE_RAYGEN_BIT_KHR;
-			case SLANG_STAGE_MISS:           return VK_SHADER_STAGE_MISS_BIT_KHR;
-			case SLANG_STAGE_CLOSEST_HIT:    return VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
-			case SLANG_STAGE_ANY_HIT:        return VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
-			case SLANG_STAGE_INTERSECTION:   return VK_SHADER_STAGE_INTERSECTION_BIT_KHR;
-			default:                         return VK_SHADER_STAGE_ALL;
-		}
-	}
-
-	VkShaderStageFlags GetEntryPointStageFlags(slang::ProgramLayout* layout)
-	{
-		VkShaderStageFlags flags = 0;
-
-		for (SlangInt i = 0; i < layout->getEntryPointCount(); ++i)
-		{
-			slang::EntryPointReflection* ep = layout->getEntryPointByIndex(i);
-			if (ep)
-				flags |= SlangStageToVulkan(ep->getStage());
+			case ShaderStage::Vertex:       return VK_SHADER_STAGE_VERTEX_BIT;
+			case ShaderStage::Fragment:     return VK_SHADER_STAGE_FRAGMENT_BIT;
+			case ShaderStage::Compute:      return VK_SHADER_STAGE_COMPUTE_BIT;
+			case ShaderStage::RayGen:       return VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+			case ShaderStage::Miss:         return VK_SHADER_STAGE_MISS_BIT_KHR;
+			case ShaderStage::ClosestHit:   return VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+			case ShaderStage::AnyHit:       return VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
+			case ShaderStage::Intersection: return VK_SHADER_STAGE_INTERSECTION_BIT_KHR;
+			case ShaderStage::Callable:     return VK_SHADER_STAGE_CALLABLE_BIT_KHR;
+			case ShaderStage::None:         return 0;
 		}
 
-		return flags ? flags : VK_SHADER_STAGE_ALL;
+		return 0;
 	}
 
 	VkDescriptorType ResolveDescriptorType(slang::TypeLayoutReflection* typeLayout, slang::ParameterCategory category)
 	{
-		if (category == slang::ParameterCategory::SamplerState)
-			return VK_DESCRIPTOR_TYPE_SAMPLER;
+		if (!typeLayout)
+			return VK_DESCRIPTOR_TYPE_MAX_ENUM;
 
 		if (typeLayout->getKind() == slang::TypeReflection::Kind::Array)
 			typeLayout = typeLayout->getElementTypeLayout();
+
+		if (!typeLayout)
+			return VK_DESCRIPTOR_TYPE_MAX_ENUM;
+
+		// Samplers
+		if (category == slang::ParameterCategory::SamplerState ||
+			typeLayout->getKind() == slang::TypeReflection::Kind::SamplerState)
+		{
+			return VK_DESCRIPTOR_TYPE_SAMPLER;
+		}
 
 		const SlangResourceShape shape = typeLayout->getResourceShape();
 		const SlangResourceAccess access = typeLayout->getResourceAccess();
@@ -162,6 +161,9 @@ namespace
 
 	uint32_t ResolveArrayCount(slang::TypeLayoutReflection* typeLayout)
 	{
+		if (!typeLayout)
+			return 0;
+
 		if (typeLayout->getKind() != slang::TypeReflection::Kind::Array)
 			return 1;
 
@@ -228,17 +230,21 @@ ShaderCompileResult ShaderCompiler::Compile(const std::filesystem::path& sourceP
 	}
 
 	result.SpirV = BlobToSpirV(spirv);
-	Reflect(module->getLayout(0), result.Reflection);
+
+	VkShaderStageFlags stageFlags = 0;
+
+	for (ShaderStage stage : result.Stages)
+		stageFlags |= ShaderStageToVulkan(stage);
+
+	Reflect(module->getLayout(0), result.Reflection, stageFlags);
 
 	return result;
 }
 
-void ShaderCompiler::Reflect(slang::ProgramLayout* layout, ShaderReflectionData& outReflection)
+void ShaderCompiler::Reflect(slang::ProgramLayout* layout, ShaderReflectionData& outReflection, VkShaderStageFlags stageFlags)
 {
 	if (!layout)
 		return;
-
-	const VkShaderStageFlags allStageFlags = GetEntryPointStageFlags(layout);
 
 	for (SlangInt i = 0; i < layout->getParameterCount(); ++i)
 	{
@@ -269,7 +275,7 @@ void ShaderCompiler::Reflect(slang::ProgramLayout* layout, ShaderReflectionData&
 
 			PushConstantRange range
 			{
-				.StageFlags = allStageFlags,
+				.StageFlags = stageFlags,
 				.Offset     = 0,
 				.Size       = size
 			};
@@ -306,7 +312,7 @@ void ShaderCompiler::Reflect(slang::ProgramLayout* layout, ShaderReflectionData&
 		binding.Binding = static_cast<uint32_t>(param->getBindingIndex());
 		binding.Count = ResolveArrayCount(typeLayout);
 		binding.DescriptorType = descriptorType;
-		binding.StageFlags = allStageFlags;
+		binding.StageFlags = stageFlags;
 
 		outReflection.DescriptorBindings.push_back(binding);
 

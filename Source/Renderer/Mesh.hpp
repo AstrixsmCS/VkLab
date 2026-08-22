@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Buffer.hpp"
+#include "Texture.hpp"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -13,6 +14,14 @@ struct Vertex
 {
 	glm::vec3 Position;
 	glm::vec3 Normal;
+	glm::vec2 TexCoord;
+	glm::vec4 Tangent;
+};
+
+struct Material
+{
+	uint32_t BaseColorTexture = Descriptor::INVALID_INDEX;
+	uint32_t BaseColorSampler = Descriptor::INVALID_INDEX;
 };
 
 struct Submesh
@@ -21,6 +30,8 @@ struct Submesh
 	uint32_t VertexCount = 0;
 	uint32_t BaseIndex   = 0;
 	uint32_t IndexCount  = 0;
+
+	uint32_t MaterialIndex = UINT32_MAX;
 };
 
 struct Node
@@ -56,6 +67,7 @@ public:
 
 	const std::string&           GetName()      const { return m_Name; }
 	const std::vector<Submesh>&  GetSubmeshes() const { return m_Submeshes; }
+	const std::vector<Material>& GetMaterials() const { return m_Materials; }
 	const std::vector<Node>&     GetNodes()     const { return m_Nodes; }
 	const Node&                  GetRootNode()  const { return m_Nodes[0]; }
 
@@ -68,7 +80,10 @@ private:
 	std::vector<uint32_t> m_Indices;
 
 	std::vector<Submesh>  m_Submeshes;
+	std::vector<Material> m_Materials;
 	std::vector<Node>     m_Nodes;   // m_Nodes[0] is always the root
+
+	std::vector<std::shared_ptr<Texture>> m_Textures;
 
 	VertexBuffer m_VertexBuffer;
 	IndexBuffer  m_IndexBuffer;

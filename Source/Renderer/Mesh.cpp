@@ -8,6 +8,7 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <stb_image.h>
 
 #include <print>
 #include <cassert>
@@ -45,9 +46,7 @@ static void ExtractTRS(const fastgltf::Node& gltfNode, Node& node)
 	}
 }
 
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Mesh
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 bool Mesh::Load(const std::filesystem::path& path)
 {
 	if (!std::filesystem::exists(path))
@@ -99,10 +98,140 @@ bool Mesh::Load(const std::filesystem::path& path)
 
 	m_Name = path.stem().string();
 
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// Geometry
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// Textures
+	m_Textures.reserve(asset.textures.size());
 
+	for (size_t i = 0; i < asset.textures.size(); i++)
+	{
+		const fastgltf::Texture& gltfTexture = asset.textures[i];
+
+		if (!gltfTexture.imageIndex.has_value())
+		{
+			m_Textures.push_back(nullptr);
+			continue;
+		}
+
+		const fastgltf::Image& gltfImage = asset.images[gltfTexture.imageIndex.value()];
+
+		auto texture = std::make_shared<Texture>();
+
+		bool loaded = false;
+
+		std::visit(fastgltf::visitor
+		{
+			[&](const fastgltf::sources::URI& uri)
+			{
+				const std::filesystem::path texturePath = path.parent_path() / uri.uri.path();
+
+				TextureSpecification spec;
+				spec.DebugName    = gltfImage.name.empty() ? texturePath.filename().string() : std::string(gltfImage.name);
+				spec.Format       = Format::RGBA8_SRGB;
+				spec.GenerateMips = true;
+
+				texture->Create(spec, texturePath);
+				loaded = texture->IsValid();
+			},
+			[&](const fastgltf::sources::Array& arr)
+			{
+				TextureSpecification spec;
+				spec.DebugName    = gltfImage.name.empty() ? std::string(m_Name) : std::string(gltfImage.name);
+				spec.Format       = Format::RGBA8_SRGB;
+				spec.GenerateMips = true;
+
+				int width = 0;
+				int height = 0;
+				int channels = 0;
+
+				stbi_uc* pixels = stbi_load_from_memory(
+				reinterpret_cast<const stbi_uc*>(arr.bytes.data()),
+				static_cast<int>(arr.bytes.size()),
+				&width, &height, &channels,
+				STBI_rgb_alpha);
+
+				if (pixels)
+				{
+					texture->Create(spec, pixels, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+					stbi_image_free(pixels);
+					loaded = texture->IsValid();
+				}
+			},
+			[&](const fastgltf::sources::BufferView& bufferView)
+			{
+				const fastgltf::BufferView& view   = asset.bufferViews[bufferView.bufferViewIndex];
+				const fastgltf::Buffer&     buffer = asset.buffers[view.bufferIndex];
+
+				std::visit(fastgltf::visitor
+				{
+				[&](const fastgltf::sources::Array& arr)
+				{
+					TextureSpecification spec;
+					spec.DebugName    = gltfImage.name.empty() ? std::string(m_Name) : std::string(gltfImage.name);
+					spec.Format       = Format::RGBA8_SRGB;
+					spec.GenerateMips = true;
+
+					int width = 0;
+					int height = 0;
+					int channels = 0;
+
+					stbi_uc* pixels = stbi_load_from_memory(
+						reinterpret_cast<const stbi_uc*>(arr.bytes.data() + view.byteOffset),
+						static_cast<int>(view.byteLength),
+						&width, &height, &channels,
+						STBI_rgb_alpha);
+
+					if (pixels)
+					{
+						texture->Create(spec, pixels, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+						stbi_image_free(pixels);
+						loaded = texture->IsValid();
+					}
+				},
+				[](auto&) {}
+				}, buffer.data);
+			},
+			[](auto&) {}
+		}, gltfImage.data);
+
+		if (loaded)
+		{
+			std::println("[Mesh] Loaded texture '{}'", texture->GetSpecification().DebugName);
+			m_Textures.push_back(std::move(texture));
+		}
+		else
+		{
+			std::println("[Mesh] Failed to load texture at index {}", i);
+			m_Textures.push_back(nullptr);
+		}
+	}
+
+	// Materials
+	m_Materials.reserve(asset.materials.size());
+
+	for (const fastgltf::Material& gltfMaterial : asset.materials)
+	{
+		Material material;
+
+		const auto& baseColorTexture = gltfMaterial.pbrData.baseColorTexture;
+
+		if (baseColorTexture.has_value())
+		{
+			const size_t textureIndex = baseColorTexture->textureIndex;
+
+			assert(textureIndex < m_Textures.size());
+
+			const std::shared_ptr<Texture>& texture = m_Textures[textureIndex];
+
+			if (texture)
+			{
+				material.BaseColorTexture = texture->GetTextureIndex();
+				material.BaseColorSampler = texture->GetSamplerIndex();
+			}
+		}
+
+		m_Materials.push_back(material);
+	}
+
+	// Geometry
 	std::vector<std::vector<uint32_t>> meshSubmeshes(asset.meshes.size());
 
 	for (size_t meshIndex = 0; meshIndex < asset.meshes.size(); meshIndex++)
@@ -121,8 +250,11 @@ bool Mesh::Load(const std::filesystem::path& path)
 			Submesh& submesh = m_Submeshes.emplace_back();
 
 			submesh.BaseVertex = static_cast<uint32_t>(m_Vertices.size());
-
 			submesh.BaseIndex = static_cast<uint32_t>(m_Indices.size());
+
+			// Material
+			if (primitive.materialIndex.has_value())
+				submesh.MaterialIndex = static_cast<uint32_t>(primitive.materialIndex.value());
 
 			// Positions
 			{
@@ -160,6 +292,38 @@ bool Mesh::Load(const std::filesystem::path& path)
 				}
 			}
 
+			// TexCoords
+			{
+				const auto it = primitive.findAttribute("TEXCOORD_0");
+				if (it != primitive.attributes.end())
+				{
+					const fastgltf::Accessor& accessor = asset.accessors[it->accessorIndex];
+
+					fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec2>(
+						asset, accessor,
+						[&](const fastgltf::math::fvec2& uv, size_t index)
+					{
+						m_Vertices[submesh.BaseVertex + index].TexCoord = { uv.x(), uv.y() };
+					});
+				}
+			}
+
+			// Tangents
+			{
+				const auto it = primitive.findAttribute("TANGENT");
+				if (it != primitive.attributes.end())
+				{
+				const fastgltf::Accessor& accessor = asset.accessors[it->accessorIndex];
+
+				fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(
+					asset, accessor,
+					[&](const fastgltf::math::fvec4& tangent, size_t index)
+					{
+						m_Vertices[submesh.BaseVertex + index].Tangent = { tangent.x(), tangent.y(), tangent.z(), tangent.w() };
+					});
+				}
+			}
+
 			// Indices
 			{
 				assert(primitive.indicesAccessor.has_value() && "Mesh primitive has no indices");
@@ -181,9 +345,7 @@ bool Mesh::Load(const std::filesystem::path& path)
 		}
 	}
 
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	// Nodes
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	m_Nodes.emplace_back();
 
 	m_Nodes[0].Name = m_Name;
@@ -213,7 +375,6 @@ bool Mesh::Load(const std::filesystem::path& path)
 		}
 
 		// Mesh / Submeshes
-
 		if (gltfNode.meshIndex.has_value())
 		{
 			const size_t meshIndex = gltfNode.meshIndex.value();
@@ -305,12 +466,14 @@ bool Mesh::Load(const std::filesystem::path& path)
 		m_IndexBuffer.Create(m_Indices.data(), m_Indices.size() * sizeof(uint32_t));
 	}
 
-	std::println("[Mesh] Loaded '{}' - {} vertices, {} indices, {} submeshes, {} nodes",
+	std::println("[Mesh] Loaded '{}' - {} vertices, {} indices, {} submeshes, {} nodes, {} textures, {} materials",
 		m_Name,
 		m_Vertices.size(),
 		m_Indices.size(),
 		m_Submeshes.size(),
-		m_Nodes.size());
+		m_Nodes.size(),
+		m_Textures.size(),
+		m_Materials.size());
 
 	return true;
 }
@@ -323,7 +486,16 @@ void Mesh::Destroy()
 	m_Vertices.clear();
 	m_Indices.clear();
 	m_Submeshes.clear();
+	m_Materials.clear();
 	m_Nodes.clear();
+
+	for (auto& texture : m_Textures)
+	{
+		if (texture)
+			texture->Destroy();
+	}
+
+	m_Textures.clear();
 
 	m_Name.clear();
 }

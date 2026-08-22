@@ -23,5 +23,5 @@ public:
 	static ShaderCompileResult Compile(const std::filesystem::path& sourcePath);
 	static bool Available();
 private:
-	static void Reflect(slang::ProgramLayout* layout, ShaderReflectionData& outReflection);
+	static void Reflect(slang::ProgramLayout* layout, ShaderReflectionData& outReflection, VkShaderStageFlags stageFlags);
 };

@@ -43,6 +43,8 @@ void Application::Shutdown()
 
 	DestroyDepthImage();
 
+	Descriptor::Shutdown();
+
 	Allocator::Shutdown();
 
 	m_Renderer.Shutdown();
@@ -58,8 +60,15 @@ void Application::Shutdown()
 void Application::Run()
 {
 	m_Running = true;
+
+	uint64_t previousCounter = SDL_GetPerformanceCounter(); //TODO: Move TimeStep stuff out of here
+
 	while (m_Running)
 	{
+		const uint64_t currentCounter = SDL_GetPerformanceCounter();
+		const float deltaTime = static_cast<float>(currentCounter - previousCounter) / static_cast<float>(SDL_GetPerformanceFrequency());
+		previousCounter = currentCounter;
+
 		SDL_Event event{};
 		while (SDL_PollEvent(&event))
 		{
@@ -75,6 +84,8 @@ void Application::Run()
 			}
 		}
 
+		m_Camera.OnUpdate(deltaTime);
+
 		Render();
 	}
 }
@@ -85,7 +96,14 @@ bool Application::InitializeVulkan()
 
 	Allocator::Initialize();
 
+	Descriptor::Initialize();
+
 	CreateDepthImage();
+
+	const VkExtent2D extent = m_Renderer.GetSwapChain().GetExtent();
+	const float aspectRatio = static_cast<float>(extent.width) / static_cast<float>(extent.height);
+	m_Camera.SetPerspective(glm::radians(60.0f), aspectRatio, 0.1f, 1000.0f);
+	m_Camera.SetPosition(glm::vec3(0.0f, 0.0f, 3.0f));
 
 	m_CameraBuffer.Create(sizeof(CameraData));
 
@@ -135,6 +153,8 @@ bool Application::CreateGraphicsPipeline()
 	{
 		{ ShaderDataType::Float3, "Position" },
 		{ ShaderDataType::Float3, "Normal"   },
+		{ ShaderDataType::Float2, "TexCoord" },
+		{ ShaderDataType::Float4, "Tangent"  },
 	};
 	spec.DebugName = "Mesh Pipeline";
 
@@ -163,7 +183,7 @@ void Application::CreateDepthImage()
 		.Mips = 1,
 		.Layers = 1,
 		.Transfer = false
-	 };
+	};
 
 	m_DepthImage.Create(specification);
 }
@@ -184,7 +204,14 @@ void Application::Render()
 	const VkExtent2D extent = swapChain.GetExtent();
 
 	const float aspectRatio = static_cast<float>(extent.width) / static_cast<float>(extent.height);
-	const CameraData cameraData = m_Camera.GetData(aspectRatio);
+	m_Camera.SetPerspective(glm::radians(60.0f), aspectRatio, 0.1f, 1000.0f);
+
+	const CameraData cameraData
+	{
+		.ViewProjection = m_Camera.GetViewProjection(),
+		.CameraPosition = m_Camera.GetPosition(),
+	};
+
 	m_CameraBuffer.SetData(&cameraData, sizeof(CameraData));
 
 	SetImageLayout(
@@ -245,6 +272,9 @@ void Application::Render()
 
 		m_Pipeline.Bind(cmd);
 
+		const VkDescriptorSet bindlessSet = Descriptor::GetSet();
+		vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_Pipeline.GetLayout(), 0, 1, &bindlessSet, 0, nullptr);
+
 		const auto& ranges = m_Shader->GetPushConstantRanges();
 		assert(!ranges.empty());
 		const auto& range = ranges[0];
@@ -256,6 +286,7 @@ void Application::Render()
 		vkCmdBindIndexBuffer(cmd, m_Mesh.GetIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
 
 		const auto& submeshes = m_Mesh.GetSubmeshes();
+		const auto& materials = m_Mesh.GetMaterials();
 
 		const glm::mat4 modelScale = glm::scale(glm::mat4(1.0f), glm::vec3(1.0f));
 
@@ -268,10 +299,25 @@ void Application::Render()
 
 				const Submesh& submesh = submeshes[submeshIndex];
 
+				uint32_t textureIndex = 0;
+				uint32_t samplerIndex = 0;
+
+				if (submesh.MaterialIndex != UINT32_MAX)
+				{
+					assert(submesh.MaterialIndex < materials.size());
+
+					const Material& material = materials[submesh.MaterialIndex];
+
+					textureIndex = material.BaseColorTexture;
+					samplerIndex = material.BaseColorSampler;
+				}
+
 				PushConstants pushConstants
 				{
-					.CameraAddress = m_CameraBuffer.GetDeviceAddress(),
-					.Model = modelScale * node.WorldTransform
+					.Model = modelScale * node.WorldTransform,
+					.Camera = m_CameraBuffer.GetDeviceAddress(),
+					.TextureIndex = textureIndex,
+					.SamplerIndex = samplerIndex
 				};
 
 				vkCmdPushConstants(cmd, m_Pipeline.GetLayout(), range.StageFlags, range.Offset, sizeof(PushConstants), &pushConstants);

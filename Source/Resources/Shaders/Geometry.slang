@@ -1,37 +1,44 @@
 struct CameraData
 {
 	float4x4 ViewProjection;
+	float3   CameraPosition;
 };
 
 struct VertexInput
 {
 	float3 Position : POSITION;
 	float3 Normal   : NORMAL;
+	float2 TexCoord : TEXCOORD0;
+	float4 Tangent  : TANGENT;
 };
 
 struct VertexOutput
 {
 	float4 Position : SV_Position;
-	float3 Normal   : NORMAL;
+	float2 TexCoord : TEXCOORD0;
 };
+
+// Bindless arrays
+[[vk::binding(0, 0)]] Texture2D    g_Textures[];
+[[vk::binding(1, 0)]] SamplerState g_Samplers[];
 
 [[vk::push_constant]]
 cbuffer PushConstants
 {
-	uint64_t CameraAddress;
 	float4x4 Model;
+	CameraData* Camera;
+	uint TextureIndex;
+	uint SamplerIndex;
 };
 
 [shader("vertex")]
 VertexOutput main(VertexInput input)
 {
-	CameraData* camera = reinterpret<CameraData*>(CameraAddress);
-
-	float4 worldPosition = mul(Model, float4(input.Position, 1.0));
+	const float4 worldPosition = mul(Model, float4(input.Position, 1.0));
 
 	VertexOutput output;
-	output.Position = mul(camera->ViewProjection, worldPosition);
-	output.Normal   = normalize(mul((float3x3)Model, input.Normal));
+	output.Position = mul(Camera->ViewProjection, worldPosition);
+	output.TexCoord = input.TexCoord;
 
 	return output;
 }
@@ -39,6 +46,5 @@ VertexOutput main(VertexInput input)
 [shader("fragment")]
 float4 main(VertexOutput input) : SV_Target
 {
-	float3 color = input.Normal * 0.5 + 0.5;
-	return float4(color, 1.0);
+	return g_Textures[TextureIndex].Sample(g_Samplers[SamplerIndex], input.TexCoord);
 }

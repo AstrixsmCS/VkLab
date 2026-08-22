@@ -13,6 +13,8 @@
 
 #include "Renderer/Image.hpp"
 #include "Renderer/Texture.hpp"
+#include "Renderer/Descriptors.hpp"
+#include "Renderer/Camera.hpp"
 
 #include <string>
 #include <array>
@@ -22,33 +24,15 @@ struct SDL_Window;
 struct CameraData
 {
 	glm::mat4 ViewProjection{ 1.0f };
+	glm::vec3 CameraPosition{ 0.0f };
 };
 
 struct PushConstants
 {
-	VkDeviceAddress CameraAddress = 0;
-
-	alignas(16) glm::mat4 Model{ 1.0f };
-};
-
-struct Camera
-{
-	glm::vec3 Position{ 0.0f, 0.0f, 3.0f };
-	glm::vec3 Target  { 0.0f, 0.0f,  0.0f };
-
-	float FovY = glm::radians(60.0f);
-	float Near = 0.1f;
-	float Far  = 1000.0f;
-
-	CameraData GetData(float aspectRatio) const
-	{
-		glm::mat4 view = glm::lookAt(Position, Target, glm::vec3(0.0f, 1.0f, 0.0f));
-		glm::mat4 proj = glm::perspective(FovY, aspectRatio, Near, Far);
-
-		proj[1][1] *= -1.0f;
-
-		return CameraData{ proj * view };
-	}
+	glm::mat4 Model{ 1.0f };
+	VkDeviceAddress Camera = 0;
+	uint32_t TextureIndex = 0;
+	uint32_t SamplerIndex = 0;
 };
 
 class Application
