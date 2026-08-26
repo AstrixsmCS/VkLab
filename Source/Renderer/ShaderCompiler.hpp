@@ -3,9 +3,10 @@
 #include "RendererTypes.hpp"
 #include "Shader.hpp"
 
+#include <slang/slang.h>
+
 #include <cstdint>
 #include <filesystem>
-#include <slang.h>
 #include <vector>
 
 struct ShaderCompileResult

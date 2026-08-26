@@ -2,7 +2,7 @@
 
 #include "RendererTypes.hpp"
 
-#include <Volk/volk.h>
+#include <volk/volk.h>
 
 #include <cassert>
 #include <chrono>
