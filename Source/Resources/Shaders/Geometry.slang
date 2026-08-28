@@ -74,8 +74,53 @@ VertexOutput main(VertexInput input)
 [shader("fragment")]
 float4 main(VertexOutput input) : SV_Target
 {
-	float4 tex = g_Textures[1].Sample(input.TexCoord);
-	float4 material = Materials[MaterialIndex].Albedo;
+	GPUMaterialData mat = Materials[MaterialIndex];
 
-	return tex * material;
+	float2 uv = input.TexCoord;
+
+	// Albedo
+	float4 albedo = mat.Albedo;
+
+	if (mat.AlbedoIndex != 0)
+	{
+		albedo *= g_Textures[mat.AlbedoIndex].Sample(uv);
+	}
+
+	// Normal
+	float3 normal = normalize(input.Normal);
+
+	if (mat.NormalIndex != 0)
+	{
+		float3 tangentNormal = g_Textures[mat.NormalIndex].Sample(uv).xyz * 2.0 - 1.0;
+
+		float3 T = normalize(input.Tangent);
+		float3 B = normalize(input.Bitangent);
+		float3 N = normalize(input.Normal);
+
+		float3x3 TBN = float3x3(T, B, N);
+
+		normal = normalize(mul(tangentNormal, TBN));
+	}
+
+	// Metallic / Roughness
+	float metalness = mat.Metalness;
+	float roughness = mat.Roughness;
+
+	if (mat.MetallicRoughnessIndex != 0)
+	{
+		float4 metallicRoughness = g_Textures[mat.MetallicRoughnessIndex].Sample(uv);
+
+		roughness *= metallicRoughness.g;
+		metalness *= metallicRoughness.b;
+	}
+
+	// Occlusion
+	float occlusion = 1.0;
+
+	if (mat.OcclusionIndex != 0)
+	{
+		occlusion = g_Textures[mat.OcclusionIndex].Sample(uv).r;
+	}
+
+	return float4(normal * 0.5 + 0.5, occlusion);
 }

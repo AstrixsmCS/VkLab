@@ -98,6 +98,34 @@ bool Mesh::Load(const std::filesystem::path& path)
 
 	m_Name = path.stem().string();
 
+	std::vector<Format> textureFormats(asset.textures.size(), Format::RGBA8_SRGB);
+
+	for (const fastgltf::Material& gltfMaterial : asset.materials)
+	{
+		const auto& pbr = gltfMaterial.pbrData;
+
+		if (gltfMaterial.normalTexture.has_value())
+		{
+			const size_t texIndex = gltfMaterial.normalTexture->textureIndex;
+			if (texIndex < textureFormats.size())
+				textureFormats[texIndex] = Format::RGBA8_UNorm;
+		}
+
+		if (pbr.metallicRoughnessTexture.has_value())
+		{
+			const size_t texIndex = pbr.metallicRoughnessTexture->textureIndex;
+			if (texIndex < textureFormats.size())
+				textureFormats[texIndex] = Format::RGBA8_UNorm;
+		}
+
+		if (gltfMaterial.occlusionTexture.has_value())
+		{
+			const size_t texIndex = gltfMaterial.occlusionTexture->textureIndex;
+			if (texIndex < textureFormats.size())
+				textureFormats[texIndex] = Format::RGBA8_UNorm;
+		}
+	}
+
 	// Textures
 	m_Textures.reserve(asset.textures.size());
 
@@ -112,10 +140,10 @@ bool Mesh::Load(const std::filesystem::path& path)
 		}
 
 		const fastgltf::Image& gltfImage = asset.images[gltfTexture.imageIndex.value()];
+		const Format format = textureFormats[i];
 
 		auto texture = std::make_shared<Texture>();
-
-		bool loaded = false;
+		bool loaded  = false;
 
 		std::visit(fastgltf::visitor
 		{
@@ -125,7 +153,7 @@ bool Mesh::Load(const std::filesystem::path& path)
 
 				TextureSpecification spec;
 				spec.DebugName    = gltfImage.name.empty() ? texturePath.filename().string() : std::string(gltfImage.name);
-				spec.Format       = Format::RGBA8_SRGB;
+				spec.Format       = format;
 				spec.GenerateMips = true;
 
 				texture->Create(spec, texturePath);
@@ -135,7 +163,7 @@ bool Mesh::Load(const std::filesystem::path& path)
 			{
 				TextureSpecification spec;
 				spec.DebugName    = gltfImage.name.empty() ? std::string(m_Name) : std::string(gltfImage.name);
-				spec.Format       = Format::RGBA8_SRGB;
+				spec.Format       = format;
 				spec.GenerateMips = true;
 
 				int width = 0;
@@ -162,31 +190,31 @@ bool Mesh::Load(const std::filesystem::path& path)
 
 				std::visit(fastgltf::visitor
 				{
-				[&](const fastgltf::sources::Array& arr)
-				{
-					TextureSpecification spec;
-					spec.DebugName    = gltfImage.name.empty() ? std::string(m_Name) : std::string(gltfImage.name);
-					spec.Format       = Format::RGBA8_SRGB;
-					spec.GenerateMips = true;
-
-					int width = 0;
-					int height = 0;
-					int channels = 0;
-
-					stbi_uc* pixels = stbi_load_from_memory(
-						reinterpret_cast<const stbi_uc*>(arr.bytes.data() + view.byteOffset),
-						static_cast<int>(view.byteLength),
-						&width, &height, &channels,
-						STBI_rgb_alpha);
-
-					if (pixels)
+					[&](const fastgltf::sources::Array& arr)
 					{
-						texture->Create(spec, pixels, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
-						stbi_image_free(pixels);
-						loaded = texture->IsValid();
-					}
-				},
-				[](auto&) {}
+						TextureSpecification spec;
+						spec.DebugName    = gltfImage.name.empty() ? std::string(m_Name) : std::string(gltfImage.name);
+						spec.Format       = format;
+						spec.GenerateMips = true;
+
+						int width = 0;
+						int height = 0;
+						int channels = 0;
+
+						stbi_uc* pixels = stbi_load_from_memory(
+							reinterpret_cast<const stbi_uc*>(arr.bytes.data() + view.byteOffset),
+							static_cast<int>(view.byteLength),
+							&width, &height, &channels,
+							STBI_rgb_alpha);
+
+						if (pixels)
+						{
+							texture->Create(spec, pixels, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+							stbi_image_free(pixels);
+							loaded = texture->IsValid();
+						}
+					},
+					[](auto&) {}
 				}, buffer.data);
 			},
 			[](auto&) {}
@@ -194,7 +222,7 @@ bool Mesh::Load(const std::filesystem::path& path)
 
 		if (loaded)
 		{
-			std::println("[Mesh] Loaded texture '{}'", texture->GetSpecification().DebugName);
+			std::println("[Mesh] Loaded texture '{}' ({})", texture->GetSpecification().DebugName, format == Format::RGBA8_SRGB ? "sRGB" : "Linear");
 			m_Textures.push_back(std::move(texture));
 		}
 		else
@@ -326,7 +354,7 @@ bool Mesh::Load(const std::filesystem::path& path)
 			Submesh& submesh = m_Submeshes.emplace_back();
 
 			submesh.BaseVertex = static_cast<uint32_t>(m_Vertices.size());
-			submesh.BaseIndex = static_cast<uint32_t>(m_Indices.size());
+			submesh.BaseIndex  = static_cast<uint32_t>(m_Indices.size());
 
 			// Material
 			if (primitive.materialIndex.has_value())
@@ -378,9 +406,9 @@ bool Mesh::Load(const std::filesystem::path& path)
 					fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec2>(
 						asset, accessor,
 						[&](const fastgltf::math::fvec2& uv, size_t index)
-					{
-						m_Vertices[submesh.BaseVertex + index].TexCoord = { uv.x(), uv.y() };
-					});
+						{
+							m_Vertices[submesh.BaseVertex + index].TexCoord = { uv.x(), uv.y() };
+						});
 				}
 			}
 
@@ -389,14 +417,14 @@ bool Mesh::Load(const std::filesystem::path& path)
 				const auto it = primitive.findAttribute("TANGENT");
 				if (it != primitive.attributes.end())
 				{
-				const fastgltf::Accessor& accessor = asset.accessors[it->accessorIndex];
+					const fastgltf::Accessor& accessor = asset.accessors[it->accessorIndex];
 
-				fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(
-					asset, accessor,
-					[&](const fastgltf::math::fvec4& tangent, size_t index)
-					{
-						m_Vertices[submesh.BaseVertex + index].Tangent = { tangent.x(), tangent.y(), tangent.z(), tangent.w() };
-					});
+					fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(
+						asset, accessor,
+						[&](const fastgltf::math::fvec4& tangent, size_t index)
+						{
+							m_Vertices[submesh.BaseVertex + index].Tangent = { tangent.x(), tangent.y(), tangent.z(), tangent.w() };
+						});
 				}
 			}
 
@@ -424,8 +452,8 @@ bool Mesh::Load(const std::filesystem::path& path)
 	// Nodes
 	m_Nodes.emplace_back();
 
-	m_Nodes[0].Name = m_Name;
-	m_Nodes[0].Parent = UINT32_MAX;
+	m_Nodes[0].Name           = m_Name;
+	m_Nodes[0].Parent         = UINT32_MAX;
 	m_Nodes[0].LocalTransform = glm::mat4(1.0f);
 	m_Nodes[0].WorldTransform = glm::mat4(1.0f);
 
