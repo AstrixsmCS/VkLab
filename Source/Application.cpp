@@ -189,7 +189,7 @@ bool Application::CreateGraphicsPipeline()
 
 bool Application::LoadMesh()
 {
-	return m_Mesh.Load("Resources/Meshes/DamagedHelmet/DamagedHelmet.glb");
+	return m_Mesh.Load("Resources/Meshes/FlightHelmet/FlightHelmet.gltf");
 }
 
 void Application::CreateDepthImage()
@@ -332,8 +332,12 @@ void Application::Render()
 				{
 					.Model          = modelScale * node.WorldTransform,
 					.Camera         = m_CameraBuffer.GetDeviceAddress(),
+
 					.MaterialBuffer = MaterialSystem::GetBuffer().GetDeviceAddress(),
 					.MaterialIndex  = materialSlot,
+
+					.LightDirection = glm::vec4(glm::normalize(m_DirectionalLight.Direction), 0.0f),
+					.LightColorIntensity = glm::vec4(m_DirectionalLight.Color, m_DirectionalLight.Intensity),
 				};
 
 				vkCmdPushConstants(cmd, m_Pipeline.GetLayout(), range.StageFlags, range.Offset, sizeof(PushConstants), &pushConstants);

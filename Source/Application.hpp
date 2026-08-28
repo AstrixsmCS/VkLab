@@ -28,15 +28,27 @@ struct CameraData
 	glm::vec3 CameraPosition{ 0.0f };
 };
 
+struct DirectionalLight
+{
+	glm::vec3 Direction{ -1.0f, -1.0f, -1.0f };
+	glm::vec3 Color{ 1.0f, 1.0f, 1.0f };
+	float Intensity = 3.0f;
+};
+
 struct PushConstants
 {
 	glm::mat4 Model{ 1.0f };
 	VkDeviceAddress Camera = 0;
 	VkDeviceAddress MaterialBuffer = 0;
 	uint32_t        MaterialIndex  = 0;
+
 	uint32_t        _Pad0;
 	uint32_t        _Pad1;
 	uint32_t        _Pad2;
+
+	glm::vec4 LightDirection;
+	glm::vec4 LightColorIntensity;
+
 };
 
 class Application
@@ -72,6 +84,8 @@ private:
 	Mesh m_Mesh;
 
 	std::vector<uint32_t> m_MaterialIndices; // Material indices parallel to m_Mesh.GetMaterials()
+
+	DirectionalLight m_DirectionalLight;
 
 	Camera        m_Camera;
 	UniformBuffer m_CameraBuffer;

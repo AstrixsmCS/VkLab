@@ -44,9 +44,13 @@ cbuffer PushConstants
 	CameraData* Camera;
 	GPUMaterialData* Materials;
 	uint             MaterialIndex;
+
 	uint             _Pad0;
 	uint             _Pad1;
 	uint             _Pad2;
+
+	float4 LightDirection;
+	float4 LightColorIntensity;
 };
 
 [shader("vertex")]
@@ -71,22 +75,68 @@ VertexOutput main(VertexInput input)
 [shader("fragment")]
 float4 main(VertexOutput input) : SV_Target
 {
-	GPUMaterialData mat = Materials[MaterialIndex];
+	const GPUMaterialData mat = Materials[MaterialIndex];
+	const float2 uv = input.TexCoord;
 
+	// Albedo
+	float4 albedo = mat.Albedo;
+
+	if (mat.AlbedoIndex != 0)
+		albedo *= g_Textures[mat.AlbedoIndex].Sample(uv);
+
+	// Normal
 	float3 N = normalize(input.Normal);
-	float3 T = normalize(input.Tangent.xyz);
-
-	// Re-orthonormalize tangent against the normal.
-	T = normalize(T - N * dot(N, T));
-
-	// Reconstruct bitangent from tangent handedness.
-	float3 B = cross(N, T) * input.Tangent.w;
 
 	if (mat.NormalIndex != 0)
 	{
-		float3 tangentNormal = g_Textures[mat.NormalIndex].Sample(input.TexCoord).xyz * 2.0 - 1.0;
+		float3 T = normalize(input.Tangent.xyz);
+		T = normalize(T - N * dot(N, T));
+
+		const float3 B = cross(N, T) * input.Tangent.w;
+
+		const float3 tangentNormal = g_Textures[mat.NormalIndex].Sample(uv).xyz * 2.0 - 1.0;
+
 		N = normalize(tangentNormal.x * T + tangentNormal.y * B + tangentNormal.z * N);
 	}
 
-		return float4(N * 0.5 + 0.5, 1.0);
+	// Metallic / Roughness
+	float metalness = mat.Metalness;
+	float roughness = mat.Roughness;
+
+	if (mat.MetallicRoughnessIndex != 0)
+	{
+		const float4 metallicRoughness = g_Textures[mat.MetallicRoughnessIndex].Sample(uv);
+
+		roughness *= metallicRoughness.g;
+		metalness *= metallicRoughness.b;
+	}
+
+	// Occlusion
+	float occlusion = 1.0;
+
+	if (mat.OcclusionIndex != 0)
+		occlusion = g_Textures[mat.OcclusionIndex].Sample(uv).r;
+
+	// Directional light
+	const float3 L = normalize(-LightDirection.xyz);
+	const float3 V = normalize(Camera->CameraPosition - input.WorldPos);
+	const float3 H = normalize(L + V);
+
+	const float3 lightColor = LightColorIntensity.rgb;
+	const float lightIntensity = LightColorIntensity.a;
+	const float3 radiance = lightColor * lightIntensity;
+
+	// Simple Blinn-Phong lighting
+	const float NdotL = max(dot(N, L), 0.0);
+	const float NdotH = max(dot(N, H), 0.0);
+
+	const float3 ambient = albedo.rgb * 0.05 * occlusion;
+	const float3 diffuse = albedo.rgb * NdotL;
+	const float shininess = lerp(128.0, 8.0, roughness);
+	const float specularStrength = lerp(0.04, 1.0, metalness);
+	const float specular = NdotL > 0.0 ? pow(NdotH, shininess) * specularStrength : 0.0;
+
+	const float3 lighting = ambient + (diffuse + specular) * radiance;
+
+	return float4(lighting, albedo.a);
 }
