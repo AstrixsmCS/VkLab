@@ -37,7 +37,15 @@ void Application::Shutdown()
 		m_Shader.reset();
 	}
 
+	// Unregister materials before destroying the mesh so textures
+	// are still alive when the slots are cleared.
+	for (uint32_t index : m_MaterialIndices)
+		MaterialSystem::UnregisterMaterial(index);
+	m_MaterialIndices.clear();
+
 	m_Mesh.Destroy();
+
+	MaterialSystem::Shutdown();
 
 	m_CameraBuffer.Destroy();
 
@@ -98,6 +106,8 @@ bool Application::InitializeVulkan()
 
 	Descriptor::Initialize();
 
+	MaterialSystem::Initialize();
+
 	CreateDepthImage();
 
 	const VkExtent2D extent = m_Renderer.GetSwapChain().GetExtent();
@@ -124,6 +134,20 @@ bool Application::InitializeVulkan()
 		ShowError("Unable to load mesh.");
 		return false;
 	}
+
+	// Register every mesh material with the material system.
+	const auto& materials = m_Mesh.GetMaterials();
+	m_MaterialIndices.reserve(materials.size());
+
+	for (const Material& material : materials)
+	{
+		auto mat = std::make_shared<Material>(material);
+		const uint32_t index = MaterialSystem::RegisterMaterial(mat);
+		m_MaterialIndices.push_back(index);
+	}
+
+	// Flush dirty materials to the GPU buffer before the first frame.
+	MaterialSystem::Update();
 
 	return true;
 }
@@ -198,6 +222,9 @@ void Application::Render()
 	if (!m_Renderer.BeginFrame())
 		return;
 
+	// Flush any material changes to the GPU buffer before drawing.
+	MaterialSystem::Update();
+
 	VkCommandBuffer cmd = m_Renderer.GetCurrentCommandBuffer();
 
 	SwapChain& swapChain = m_Renderer.GetSwapChain();
@@ -211,7 +238,6 @@ void Application::Render()
 		.ViewProjection = m_Camera.GetViewProjection(),
 		.CameraPosition = m_Camera.GetPosition(),
 	};
-
 	m_CameraBuffer.SetData(&cameraData, sizeof(CameraData));
 
 	SetImageLayout(
@@ -272,8 +298,8 @@ void Application::Render()
 
 		m_Pipeline.Bind(cmd);
 
-		const VkDescriptorSet bindlessSet = Descriptor::GetSet();
-		vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_Pipeline.GetLayout(), 0, 1, &bindlessSet, 0, nullptr);
+		VkDescriptorSet descriptorSet = Descriptor::GetSet();
+		vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_Pipeline.GetLayout(), 0, 1, &descriptorSet, 0, nullptr);
 
 		const auto& ranges = m_Shader->GetPushConstantRanges();
 		assert(!ranges.empty());
@@ -286,38 +312,28 @@ void Application::Render()
 		vkCmdBindIndexBuffer(cmd, m_Mesh.GetIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
 
 		const auto& submeshes = m_Mesh.GetSubmeshes();
-		const auto& materials = m_Mesh.GetMaterials();
-
 		const glm::mat4 modelScale = glm::scale(glm::mat4(1.0f), glm::vec3(1.0f));
 
-		m_Mesh.TraverseNodes(
-		[&](const Node& node)
+		m_Mesh.TraverseNodes([&](const Node& node)
 		{
 			for (uint32_t submeshIndex : node.Submeshes)
 			{
 				assert(submeshIndex < submeshes.size());
-
 				const Submesh& submesh = submeshes[submeshIndex];
 
-				uint32_t textureIndex = 0;
-				uint32_t samplerIndex = 0;
-
-				if (submesh.MaterialIndex != UINT32_MAX)
+				// Map the mesh material index to the material system slot index.
+				uint32_t materialSlot = 0;
+				if (submesh.MaterialIndex != UINT32_MAX && submesh.MaterialIndex < m_MaterialIndices.size())
 				{
-					assert(submesh.MaterialIndex < materials.size());
-
-					const Material& material = materials[submesh.MaterialIndex];
-
-					textureIndex = material.BaseColorTexture;
-					samplerIndex = material.BaseColorSampler;
+					materialSlot = m_MaterialIndices[submesh.MaterialIndex];
 				}
 
 				PushConstants pushConstants
 				{
-					.Model = modelScale * node.WorldTransform,
-					.Camera = m_CameraBuffer.GetDeviceAddress(),
-					.TextureIndex = textureIndex,
-					.SamplerIndex = samplerIndex
+					.Model          = modelScale * node.WorldTransform,
+					.Camera         = m_CameraBuffer.GetDeviceAddress(),
+					.MaterialBuffer = MaterialSystem::GetBuffer().GetDeviceAddress(),
+					.MaterialIndex  = materialSlot,
 				};
 
 				vkCmdPushConstants(cmd, m_Pipeline.GetLayout(), range.StageFlags, range.Offset, sizeof(PushConstants), &pushConstants);

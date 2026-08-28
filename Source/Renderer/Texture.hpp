@@ -48,7 +48,6 @@ public:
 	Format GetFormat() const { return m_Image.GetFormat(); }
 
 	uint32_t GetTextureIndex() const { return m_TextureIndex; }
-	uint32_t GetSamplerIndex() const { return m_SamplerIndex; }
 
 	const TextureSpecification& GetSpecification() const { return m_Specification; }
 private:
@@ -67,7 +66,6 @@ private:
 	VkSampler m_Sampler = VK_NULL_HANDLE;
 
 	uint32_t m_TextureIndex = Descriptor::INVALID_INDEX;
-	uint32_t m_SamplerIndex = Descriptor::INVALID_INDEX;
 
 	VkCommandPool m_TransientCommandPool = VK_NULL_HANDLE; //TODO: temp
 };

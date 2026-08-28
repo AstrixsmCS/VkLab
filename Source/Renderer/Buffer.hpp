@@ -225,3 +225,26 @@ private:
 
 	uint32_t m_Size;
 };
+
+class StorageBuffer
+{
+public:
+	void Create(VkDeviceSize size);
+	void Destroy();
+
+	void SetData(const void* data, VkDeviceSize size, VkDeviceSize offset = 0);
+
+	VkBuffer GetBuffer() const { return m_Buffer; }
+	VkDeviceAddress GetDeviceAddress() const { return m_DeviceAddress; }
+
+	VkDeviceSize GetSize() const { return m_Size; }
+
+	bool IsValid() const { return m_Buffer != VK_NULL_HANDLE; }
+private:
+	VkBuffer m_Buffer = VK_NULL_HANDLE;
+	VmaAllocation m_Allocation = VK_NULL_HANDLE;
+
+	VkDeviceAddress m_DeviceAddress = 0;
+
+	VkDeviceSize m_Size;
+};

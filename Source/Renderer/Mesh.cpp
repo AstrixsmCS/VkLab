@@ -211,24 +211,100 @@ bool Mesh::Load(const std::filesystem::path& path)
 	{
 		Material material;
 
-		const auto& baseColorTexture = gltfMaterial.pbrData.baseColorTexture;
+		const auto& pbr = gltfMaterial.pbrData;
 
-		if (baseColorTexture.has_value())
+		// Albedo color factor
+		const auto& c = pbr.baseColorFactor;
+		material.SetColor({ c[0], c[1], c[2], c[3] });
+
+		// Metallic / roughness factors
+		material.SetMetalness(pbr.metallicFactor);
+		material.SetRoughness(pbr.roughnessFactor);
+
+		// Albedo texture
+		if (pbr.baseColorTexture.has_value())
 		{
-			const size_t textureIndex = baseColorTexture->textureIndex;
+			const size_t texIndex = pbr.baseColorTexture->textureIndex;
+			assert(texIndex < m_Textures.size());
 
-			assert(textureIndex < m_Textures.size());
-
-			const std::shared_ptr<Texture>& texture = m_Textures[textureIndex];
-
-			if (texture)
+			if (m_Textures[texIndex])
 			{
-				material.BaseColorTexture = texture->GetTextureIndex();
-				material.BaseColorSampler = texture->GetSamplerIndex();
+				material.SetTexture({
+					.Texture    = m_Textures[texIndex],
+					.Type       = MapType::Albedo,
+					.UvIndex    = 0,
+					.UseMap     = true,
+					.UseTexture = true
+				});
 			}
 		}
 
-		m_Materials.push_back(material);
+		// Normal texture
+		if (gltfMaterial.normalTexture.has_value())
+		{
+			const size_t texIndex = gltfMaterial.normalTexture->textureIndex;
+			assert(texIndex < m_Textures.size());
+
+			if (m_Textures[texIndex])
+			{
+				material.SetTexture({
+					.Texture    = m_Textures[texIndex],
+					.Type       = MapType::Normal,
+					.UvIndex    = 0,
+					.UseMap     = true,
+					.UseTexture = true
+				});
+			}
+		}
+
+		// Metallic/roughness texture
+		if (pbr.metallicRoughnessTexture.has_value())
+		{
+			const size_t texIndex = pbr.metallicRoughnessTexture->textureIndex;
+			assert(texIndex < m_Textures.size());
+
+			if (m_Textures[texIndex])
+			{
+				material.SetTexture({
+					.Texture    = m_Textures[texIndex],
+					.Type       = MapType::MetallicRoughness,
+					.UvIndex    = 0,
+					.UseMap     = true,
+					.UseTexture = true
+				});
+			}
+		}
+
+		// Occlusion texture
+		if (gltfMaterial.occlusionTexture.has_value())
+		{
+			const size_t texIndex = gltfMaterial.occlusionTexture->textureIndex;
+			assert(texIndex < m_Textures.size());
+
+			if (m_Textures[texIndex])
+			{
+				material.SetTexture({
+					.Texture    = m_Textures[texIndex],
+					.Type       = MapType::Occlusion,
+					.UvIndex    = 0,
+					.UseMap     = true,
+					.UseTexture = true
+				});
+			}
+		}
+
+		// Alpha mode
+		if (gltfMaterial.alphaMode == fastgltf::AlphaMode::Mask)
+		{
+			material.SetRenderMode(Material::RenderMode::Cutout);
+			material.SetAlphaCutoff(gltfMaterial.alphaCutoff);
+		}
+		else if (gltfMaterial.alphaMode == fastgltf::AlphaMode::Blend)
+		{
+			material.SetRenderMode(Material::RenderMode::Transparent);
+		}
+
+		m_Materials.push_back(std::move(material));
 	}
 
 	// Geometry

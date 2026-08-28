@@ -4,6 +4,19 @@ struct CameraData
 	float3   CameraPosition;
 };
 
+struct GPUMaterialData
+{
+	float4   Albedo;
+	uint     AlbedoIndex;
+	uint     NormalIndex;
+	uint     MetallicRoughnessIndex;
+	uint     OcclusionIndex;
+	float    Metalness;
+	float    Roughness;
+	float    AlphaCutoff;
+	uint     Flags;
+};
+
 struct VertexInput
 {
 	float3 Position : POSITION;
@@ -14,31 +27,46 @@ struct VertexInput
 
 struct VertexOutput
 {
-	float4 Position : SV_Position;
-	float2 TexCoord : TEXCOORD0;
+	float4 Position  : SV_Position;
+	float3 WorldPos  : TEXCOORD2;
+	float3 Normal    : NORMAL;
+	float2 TexCoord  : TEXCOORD0;
+	float3 Tangent   : TANGENT;
+	float3 Bitangent : TEXCOORD1;
 };
 
 // Bindless arrays
-[[vk::binding(0, 0)]] Texture2D    g_Textures[];
-[[vk::binding(1, 0)]] SamplerState g_Samplers[];
+[[vk::binding(0, 0)]] Sampler2D g_Textures[];
 
 [[vk::push_constant]]
 cbuffer PushConstants
 {
 	float4x4 Model;
 	CameraData* Camera;
-	uint TextureIndex;
-	uint SamplerIndex;
+	GPUMaterialData* Materials;
+	uint             MaterialIndex;
+	uint             _Pad0;
+	uint             _Pad1;
+	uint             _Pad2;
 };
 
 [shader("vertex")]
 VertexOutput main(VertexInput input)
 {
-	const float4 worldPosition = mul(Model, float4(input.Position, 1.0));
+	const float4   worldPosition = mul(Model, float4(input.Position, 1.0));
+	const float3x3 normalMatrix  = (float3x3)Model;
+
+	const float3 N = normalize(mul(normalMatrix, input.Normal));
+	const float3 T = normalize(mul(normalMatrix, input.Tangent.xyz));
+	const float3 B = cross(N, T) * input.Tangent.w;
 
 	VertexOutput output;
-	output.Position = mul(Camera->ViewProjection, worldPosition);
-	output.TexCoord = input.TexCoord;
+	output.Position  = mul(Camera->ViewProjection, worldPosition);
+	output.WorldPos  = worldPosition.xyz;
+	output.Normal    = N;
+	output.TexCoord  = input.TexCoord;
+	output.Tangent   = T;
+	output.Bitangent = B;
 
 	return output;
 }
@@ -46,5 +74,8 @@ VertexOutput main(VertexInput input)
 [shader("fragment")]
 float4 main(VertexOutput input) : SV_Target
 {
-	return g_Textures[TextureIndex].Sample(g_Samplers[SamplerIndex], input.TexCoord);
+	float4 tex = g_Textures[1].Sample(input.TexCoord);
+	float4 material = Materials[MaterialIndex].Albedo;
+
+	return tex * material;
 }

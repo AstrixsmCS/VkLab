@@ -15,6 +15,7 @@
 #include "Renderer/Texture.hpp"
 #include "Renderer/Descriptors.hpp"
 #include "Renderer/Camera.hpp"
+#include "Renderer/MaterialSystem.hpp"
 
 #include <string>
 #include <array>
@@ -31,8 +32,11 @@ struct PushConstants
 {
 	glm::mat4 Model{ 1.0f };
 	VkDeviceAddress Camera = 0;
-	uint32_t TextureIndex = 0;
-	uint32_t SamplerIndex = 0;
+	VkDeviceAddress MaterialBuffer = 0;
+	uint32_t        MaterialIndex  = 0;
+	uint32_t        _Pad0;
+	uint32_t        _Pad1;
+	uint32_t        _Pad2;
 };
 
 class Application
@@ -66,6 +70,8 @@ private:
 	std::shared_ptr<Shader> m_Shader;
 
 	Mesh m_Mesh;
+
+	std::vector<uint32_t> m_MaterialIndices; // Material indices parallel to m_Mesh.GetMaterials()
 
 	Camera        m_Camera;
 	UniformBuffer m_CameraBuffer;

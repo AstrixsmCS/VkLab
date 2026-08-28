@@ -2,6 +2,7 @@
 
 #include "Buffer.hpp"
 #include "Texture.hpp"
+#include "Material.hpp"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -16,12 +17,6 @@ struct Vertex
 	glm::vec3 Normal;
 	glm::vec2 TexCoord;
 	glm::vec4 Tangent;
-};
-
-struct Material
-{
-	uint32_t BaseColorTexture = Descriptor::INVALID_INDEX;
-	uint32_t BaseColorSampler = Descriptor::INVALID_INDEX;
 };
 
 struct Submesh

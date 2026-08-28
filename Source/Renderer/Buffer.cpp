@@ -223,3 +223,73 @@ void UniformBuffer::SetData(const void* data, uint32_t size, uint32_t offset)
 
 	vmaUnmapMemory(Allocator::GetAllocator(), m_Allocation);
 }
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Storage Buffer
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void StorageBuffer::Create(VkDeviceSize size)
+{
+	assert(size > 0);
+	assert(m_Buffer == VK_NULL_HANDLE);
+
+	m_Size = size;
+
+	VkBufferCreateInfo bufferInfo
+	{
+		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+		.size = size,
+		.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+		.sharingMode = VK_SHARING_MODE_EXCLUSIVE
+	};
+
+	VmaAllocationCreateInfo allocationInfo
+	{
+		.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
+		.usage = VMA_MEMORY_USAGE_AUTO
+	};
+
+	VK_CHECK(vmaCreateBuffer(Allocator::GetAllocator(), &bufferInfo, &allocationInfo, &m_Buffer, &m_Allocation, nullptr));
+
+	VkBufferDeviceAddressInfo addressInfo
+	{
+		.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+		.buffer = m_Buffer
+	};
+
+	m_DeviceAddress = vkGetBufferDeviceAddress(RendererContext::Get().GetDevice(), &addressInfo);
+
+	assert(m_DeviceAddress != 0);
+}
+
+void StorageBuffer::Destroy()
+{
+	if (m_Buffer == VK_NULL_HANDLE)
+		return;
+
+	vmaDestroyBuffer(Allocator::GetAllocator(), m_Buffer, m_Allocation);
+
+	m_Buffer = VK_NULL_HANDLE;
+	m_Allocation = VK_NULL_HANDLE;
+
+	m_DeviceAddress = 0;
+	m_Size = 0;
+}
+
+void StorageBuffer::SetData(const void* data, VkDeviceSize size, VkDeviceSize offset)
+{
+	assert(m_Buffer != VK_NULL_HANDLE);
+	assert(data);
+	assert(size > 0);
+
+	assert(offset <= m_Size);
+	assert(size <= m_Size - offset);
+
+	void* mappedData = nullptr;
+
+	VK_CHECK(vmaMapMemory(Allocator::GetAllocator(), m_Allocation, &mappedData));
+
+	std::memcpy(static_cast<uint8_t*>(mappedData) + offset, data, static_cast<size_t>(size));
+
+	vmaUnmapMemory(Allocator::GetAllocator(), m_Allocation);
+}

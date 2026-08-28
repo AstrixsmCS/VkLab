@@ -89,8 +89,7 @@ void Texture::Create(const TextureSpecification& specification, const void* data
 
 	CreateSampler();
 
-	m_TextureIndex = Descriptor::RegisterTexture(m_Image.GetView());
-	m_SamplerIndex = Descriptor::RegisterSampler(m_Sampler);
+	m_TextureIndex = Descriptor::RegisterTexture(m_Image.GetView(), m_Sampler);
 }
 
 void Texture::Create(const TextureSpecification& specification, const std::filesystem::path& path)
@@ -472,10 +471,8 @@ void Texture::Destroy()
 	const VkDevice device = RendererContext::Get().GetDevice();
 
 	Descriptor::UnregisterTexture(m_TextureIndex);
-	Descriptor::UnregisterSampler(m_SamplerIndex);
 
 	m_TextureIndex = Descriptor::INVALID_INDEX;
-	m_SamplerIndex = Descriptor::INVALID_INDEX;
 
 	if (m_Sampler != VK_NULL_HANDLE)
 	{
