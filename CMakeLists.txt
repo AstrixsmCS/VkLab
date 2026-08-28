@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25...4.0 FATAL_ERROR)
 
-project(VkLab VERSION 0.1.0 LANGUAGES CXX)
+project(VkLab VERSION 0.1.0 LANGUAGES CXX C)
 
 # C++ Configuration
 set(CMAKE_CXX_STANDARD 23)
@@ -48,4 +48,5 @@ target_link_libraries(VkLab PRIVATE
 		slang::slang
 		fastgltf::fastgltf
 		stb::stb
+		mikktspace::mikktspace
 )

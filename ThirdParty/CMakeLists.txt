@@ -54,3 +54,18 @@ add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/fastgltf SYSTEM)
 add_library(stb INTERFACE)
 target_include_directories(stb INTERFACE ${CMAKE_CURRENT_LIST_DIR}/stb)
 add_library(stb::stb ALIAS stb)
+
+# ==== MikkTSpace ====
+add_library(
+		mikktspace
+		STATIC
+		${CMAKE_CURRENT_LIST_DIR}/MikkTSpace/mikktspace.c
+)
+
+add_library(mikktspace::mikktspace ALIAS mikktspace)
+
+target_include_directories(
+		mikktspace
+		PUBLIC
+		${CMAKE_CURRENT_LIST_DIR}/MikkTSpace
+)

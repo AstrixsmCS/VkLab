@@ -31,8 +31,7 @@ struct VertexOutput
 	float3 WorldPos  : TEXCOORD2;
 	float3 Normal    : NORMAL;
 	float2 TexCoord  : TEXCOORD0;
-	float3 Tangent   : TANGENT;
-	float3 Bitangent : TEXCOORD1;
+	float4 Tangent   : TANGENT; // xyz = tangent, w = handedness
 };
 
 // Bindless arrays
@@ -54,19 +53,17 @@ cbuffer PushConstants
 VertexOutput main(VertexInput input)
 {
 	const float4   worldPosition = mul(Model, float4(input.Position, 1.0));
-	const float3x3 normalMatrix  = (float3x3)Model;
+	const float3x3 model3x3      = (float3x3)Model;
 
-	const float3 N = normalize(mul(normalMatrix, input.Normal));
-	const float3 T = normalize(mul(normalMatrix, input.Tangent.xyz));
-	const float3 B = cross(N, T) * input.Tangent.w;
+	const float3 N = normalize(mul(model3x3, input.Normal));
+	const float3 T = normalize(mul(model3x3, input.Tangent.xyz));
 
 	VertexOutput output;
-	output.Position  = mul(Camera->ViewProjection, worldPosition);
-	output.WorldPos  = worldPosition.xyz;
-	output.Normal    = N;
-	output.TexCoord  = input.TexCoord;
-	output.Tangent   = T;
-	output.Bitangent = B;
+	output.Position = mul(Camera->ViewProjection, worldPosition);
+	output.WorldPos = worldPosition.xyz;
+	output.Normal   = N;
+	output.TexCoord = input.TexCoord;
+	output.Tangent  = float4(T, input.Tangent.w);
 
 	return output;
 }
@@ -76,51 +73,20 @@ float4 main(VertexOutput input) : SV_Target
 {
 	GPUMaterialData mat = Materials[MaterialIndex];
 
-	float2 uv = input.TexCoord;
+	float3 N = normalize(input.Normal);
+	float3 T = normalize(input.Tangent.xyz);
 
-	// Albedo
-	float4 albedo = mat.Albedo;
+	// Re-orthonormalize tangent against the normal.
+	T = normalize(T - N * dot(N, T));
 
-	if (mat.AlbedoIndex != 0)
-	{
-		albedo *= g_Textures[mat.AlbedoIndex].Sample(uv);
-	}
-
-	// Normal
-	float3 normal = normalize(input.Normal);
+	// Reconstruct bitangent from tangent handedness.
+	float3 B = cross(N, T) * input.Tangent.w;
 
 	if (mat.NormalIndex != 0)
 	{
-		float3 tangentNormal = g_Textures[mat.NormalIndex].Sample(uv).xyz * 2.0 - 1.0;
-
-		float3 T = normalize(input.Tangent);
-		float3 B = normalize(input.Bitangent);
-		float3 N = normalize(input.Normal);
-
-		float3x3 TBN = float3x3(T, B, N);
-
-		normal = normalize(mul(tangentNormal, TBN));
+		float3 tangentNormal = g_Textures[mat.NormalIndex].Sample(input.TexCoord).xyz * 2.0 - 1.0;
+		N = normalize(tangentNormal.x * T + tangentNormal.y * B + tangentNormal.z * N);
 	}
 
-	// Metallic / Roughness
-	float metalness = mat.Metalness;
-	float roughness = mat.Roughness;
-
-	if (mat.MetallicRoughnessIndex != 0)
-	{
-		float4 metallicRoughness = g_Textures[mat.MetallicRoughnessIndex].Sample(uv);
-
-		roughness *= metallicRoughness.g;
-		metalness *= metallicRoughness.b;
-	}
-
-	// Occlusion
-	float occlusion = 1.0;
-
-	if (mat.OcclusionIndex != 0)
-	{
-		occlusion = g_Textures[mat.OcclusionIndex].Sample(uv).r;
-	}
-
-	return float4(normal * 0.5 + 0.5, occlusion);
+		return float4(N * 0.5 + 0.5, 1.0);
 }

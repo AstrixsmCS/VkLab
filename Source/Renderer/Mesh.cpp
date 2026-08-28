@@ -9,6 +9,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <stb_image.h>
+#include <mikktspace.h>
 
 #include <print>
 #include <cassert>
@@ -44,6 +45,135 @@ static void ExtractTRS(const fastgltf::Node& gltfNode, Node& node)
 		node.Rotation    = glm::make_quat(trs->rotation.data());
 		node.Scale       = glm::make_vec3(trs->scale.data());
 	}
+}
+
+// MikkTSpace
+struct MikkTSpaceUserData
+{
+	std::vector<Vertex>&   Vertices;
+	std::vector<uint32_t>& Indices;
+	std::vector<glm::vec4> Tangents;
+};
+
+static int MikkGetNumFaces(const SMikkTSpaceContext* context)
+{
+	const auto* data = static_cast<const MikkTSpaceUserData*>(context->m_pUserData);
+	return static_cast<int>(data->Indices.size() / 3);
+}
+
+static int MikkGetNumVerticesOfFace(const SMikkTSpaceContext*, const int)
+{
+	return 3;
+}
+
+static void MikkGetPosition(const SMikkTSpaceContext* context, float out[], const int iFace, const int iVert)
+{
+	const auto* data = static_cast<const MikkTSpaceUserData*>(context->m_pUserData);
+
+	const uint32_t index = data->Indices[iFace * 3 + iVert];
+
+	const glm::vec3& pos = data->Vertices[index].Position;
+
+	out[0] = pos.x;
+	out[1] = pos.y;
+	out[2] = pos.z;
+}
+
+static void MikkGetNormal(const SMikkTSpaceContext* context, float out[], const int iFace, const int iVert)
+{
+	const auto* data = static_cast<const MikkTSpaceUserData*>(context->m_pUserData);
+
+	const uint32_t index = data->Indices[iFace * 3 + iVert];
+
+	const glm::vec3& n = data->Vertices[index].Normal;
+
+	out[0] = n.x;
+	out[1] = n.y;
+	out[2] = n.z;
+}
+
+static void MikkGetTexCoord(const SMikkTSpaceContext* context, float out[], const int iFace, const int iVert)
+{
+	const auto* data = static_cast<const MikkTSpaceUserData*>(context->m_pUserData);
+
+	const uint32_t index = data->Indices[iFace * 3 + iVert];
+
+	const glm::vec2& uv = data->Vertices[index].TexCoord;
+
+	out[0] = uv.x;
+	out[1] = uv.y;
+}
+
+static void MikkSetTSpaceBasic(const SMikkTSpaceContext* context, const float tangent[], const float sign, const int iFace, const int iVert)
+{
+	auto* data = static_cast<MikkTSpaceUserData*>(context->m_pUserData);
+
+	const uint32_t corner = iFace * 3 + iVert;
+
+	data->Tangents[corner] =
+	{
+		tangent[0],
+		tangent[1],
+		tangent[2],
+		sign
+	};
+}
+
+bool Mesh::GenerateTangents(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices)
+{
+	if (vertices.empty() || indices.empty())
+		return false;
+
+	if (indices.size() % 3 != 0)
+		return false;
+
+	MikkTSpaceUserData userData
+	{
+		.Vertices = vertices,
+		.Indices  = indices,
+		.Tangents = std::vector<glm::vec4>(indices.size())
+	};
+
+	SMikkTSpaceInterface iface{};
+	iface.m_getNumFaces          = MikkGetNumFaces;
+	iface.m_getNumVerticesOfFace = MikkGetNumVerticesOfFace;
+	iface.m_getPosition          = MikkGetPosition;
+	iface.m_getNormal            = MikkGetNormal;
+	iface.m_getTexCoord          = MikkGetTexCoord;
+	iface.m_setTSpaceBasic       = MikkSetTSpaceBasic;
+	iface.m_setTSpace            = nullptr;
+
+	SMikkTSpaceContext context{};
+	context.m_pInterface = &iface;
+	context.m_pUserData  = &userData;
+
+	const tbool result = genTangSpaceDefault(&context);
+
+	if (!result)
+	{
+		std::println("[Mesh] MikkTSpace tangent generation failed");
+		return false;
+	}
+
+	std::vector<Vertex> newVertices;
+	std::vector<uint32_t> newIndices;
+
+	newVertices.reserve(indices.size());
+	newIndices.reserve(indices.size());
+
+	for (size_t i = 0; i < indices.size(); i++)
+	{
+		Vertex vertex = vertices[indices[i]];
+		vertex.Tangent = userData.Tangents[i];
+
+		newIndices.push_back(static_cast<uint32_t>(newVertices.size()));
+		newVertices.push_back(vertex);
+	}
+
+	vertices = std::move(newVertices);
+	indices  = std::move(newIndices);
+
+	return true;
 }
 
 // Mesh
@@ -335,7 +465,6 @@ bool Mesh::Load(const std::filesystem::path& path)
 		m_Materials.push_back(std::move(material));
 	}
 
-	// Geometry
 	std::vector<std::vector<uint32_t>> meshSubmeshes(asset.meshes.size());
 
 	for (size_t meshIndex = 0; meshIndex < asset.meshes.size(); meshIndex++)
@@ -347,18 +476,11 @@ bool Mesh::Load(const std::filesystem::path& path)
 			if (primitive.type != fastgltf::PrimitiveType::Triangles)
 				continue;
 
-			const uint32_t submeshIndex = static_cast<uint32_t>(m_Submeshes.size());
+			std::vector<Vertex>   vertices;
+			std::vector<uint32_t> indices;
 
-			meshSubmeshes[meshIndex].push_back(submeshIndex);
-
-			Submesh& submesh = m_Submeshes.emplace_back();
-
-			submesh.BaseVertex = static_cast<uint32_t>(m_Vertices.size());
-			submesh.BaseIndex  = static_cast<uint32_t>(m_Indices.size());
-
-			// Material
-			if (primitive.materialIndex.has_value())
-				submesh.MaterialIndex = static_cast<uint32_t>(primitive.materialIndex.value());
+			bool hasNormals   = false;
+			bool hasTexCoords = false;
 
 			// Positions
 			{
@@ -367,17 +489,14 @@ bool Mesh::Load(const std::filesystem::path& path)
 
 				const fastgltf::Accessor& accessor = asset.accessors[it->accessorIndex];
 
-				const uint32_t vertexStart = static_cast<uint32_t>(m_Vertices.size());
-				m_Vertices.resize(vertexStart + accessor.count);
+				vertices.resize(accessor.count);
 
 				fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(
 					asset, accessor,
 					[&](const fastgltf::math::fvec3& pos, size_t index)
 					{
-						m_Vertices[vertexStart + index].Position = { pos.x(), pos.y(), pos.z() };
+						vertices[index].Position = { pos.x(), pos.y(), pos.z() };
 					});
-
-				submesh.VertexCount = static_cast<uint32_t>(accessor.count);
 			}
 
 			// Normals
@@ -391,8 +510,10 @@ bool Mesh::Load(const std::filesystem::path& path)
 						asset, accessor,
 						[&](const fastgltf::math::fvec3& normal, size_t index)
 						{
-							m_Vertices[submesh.BaseVertex + index].Normal = { normal.x(), normal.y(), normal.z() };
+							vertices[index].Normal = { normal.x(), normal.y(), normal.z() };
 						});
+
+					hasNormals = true;
 				}
 			}
 
@@ -407,24 +528,10 @@ bool Mesh::Load(const std::filesystem::path& path)
 						asset, accessor,
 						[&](const fastgltf::math::fvec2& uv, size_t index)
 						{
-							m_Vertices[submesh.BaseVertex + index].TexCoord = { uv.x(), uv.y() };
+							vertices[index].TexCoord = { uv.x(), uv.y() };
 						});
-				}
-			}
 
-			// Tangents
-			{
-				const auto it = primitive.findAttribute("TANGENT");
-				if (it != primitive.attributes.end())
-				{
-					const fastgltf::Accessor& accessor = asset.accessors[it->accessorIndex];
-
-					fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(
-						asset, accessor,
-						[&](const fastgltf::math::fvec4& tangent, size_t index)
-						{
-							m_Vertices[submesh.BaseVertex + index].Tangent = { tangent.x(), tangent.y(), tangent.z(), tangent.w() };
-						});
+					hasTexCoords = true;
 				}
 			}
 
@@ -434,18 +541,38 @@ bool Mesh::Load(const std::filesystem::path& path)
 
 				const fastgltf::Accessor& accessor = asset.accessors[primitive.indicesAccessor.value()];
 
-				const uint32_t indexStart = static_cast<uint32_t>(m_Indices.size());
-				m_Indices.resize(indexStart + accessor.count);
+				indices.resize(accessor.count);
 
 				fastgltf::iterateAccessorWithIndex<uint32_t>(
 					asset, accessor,
 					[&](uint32_t index, size_t i)
 					{
-						m_Indices[indexStart + i] = index;
+						indices[i] = index;
 					});
-
-				submesh.IndexCount = static_cast<uint32_t>(accessor.count);
 			}
+
+			// Generate tangents via MikkTSpace.
+			// This expands vertices to one-per-corner (unindexed output from MikkTSpace).
+			// Only run if we have the data MikkTSpace needs.
+			if (hasNormals && hasTexCoords)
+				GenerateTangents(vertices, indices);
+
+			const uint32_t submeshIndex = static_cast<uint32_t>(m_Submeshes.size());
+
+			meshSubmeshes[meshIndex].push_back(submeshIndex);
+
+			Submesh& submesh = m_Submeshes.emplace_back();
+
+			submesh.BaseVertex  = static_cast<uint32_t>(m_Vertices.size());
+			submesh.BaseIndex   = static_cast<uint32_t>(m_Indices.size());
+			submesh.VertexCount = static_cast<uint32_t>(vertices.size());
+			submesh.IndexCount  = static_cast<uint32_t>(indices.size());
+
+			if (primitive.materialIndex.has_value())
+				submesh.MaterialIndex = static_cast<uint32_t>(primitive.materialIndex.value());
+
+			m_Vertices.insert(m_Vertices.end(), vertices.begin(), vertices.end());
+			m_Indices.insert(m_Indices.end(), indices.begin(), indices.end());
 		}
 	}
 

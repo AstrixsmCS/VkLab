@@ -69,6 +69,8 @@ public:
 	VkBuffer GetVertexBuffer() const { return m_VertexBuffer.GetBuffer(); }
 	VkBuffer GetIndexBuffer()  const { return m_IndexBuffer.GetBuffer(); }
 private:
+	bool GenerateTangents(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices);
+private:
 	std::string m_Name;
 
 	std::vector<Vertex>   m_Vertices;
