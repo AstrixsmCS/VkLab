@@ -16,6 +16,7 @@
 #include "Renderer/Descriptors.hpp"
 #include "Renderer/Camera.hpp"
 #include "Renderer/MaterialSystem.hpp"
+#include "Renderer/ImGui.hpp"
 
 #include <string>
 #include <array>
@@ -86,6 +87,8 @@ private:
 	std::vector<uint32_t> m_MaterialIndices; // Material indices parallel to m_Mesh.GetMaterials()
 
 	DirectionalLight m_DirectionalLight;
+
+	ImGuiLayer m_ImGui;
 
 	Camera        m_Camera;
 	UniformBuffer m_CameraBuffer;

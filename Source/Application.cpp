@@ -4,7 +4,7 @@
 
 #include <vma/vk_mem_alloc.h>
 
-#include <print>
+#include <backends/imgui_impl_sdl3.h>
 
 void Application::ShowError(const std::string& errorMessage) const
 {
@@ -55,6 +55,8 @@ void Application::Shutdown()
 
 	Allocator::Shutdown();
 
+	m_ImGui.Shutdown();
+
 	m_Renderer.Shutdown();
 
 	if (m_Window)
@@ -80,6 +82,8 @@ void Application::Run()
 		SDL_Event event{};
 		while (SDL_PollEvent(&event))
 		{
+			ImGui_ImplSDL3_ProcessEvent(&event);
+
 			if (event.type == SDL_EVENT_QUIT)
 			{
 				m_Running = false;
@@ -101,6 +105,8 @@ void Application::Run()
 bool Application::InitializeVulkan()
 {
 	m_Renderer.Initialize(m_Window);
+
+	m_ImGui.Initialize();
 
 	Allocator::Initialize();
 
@@ -189,7 +195,7 @@ bool Application::CreateGraphicsPipeline()
 
 bool Application::LoadMesh()
 {
-	return m_Mesh.Load("Resources/Meshes/FlightHelmet/FlightHelmet.gltf");
+	return m_Mesh.Load("Resources/Meshes/DamagedHelmet/DamagedHelmet.glb");
 }
 
 void Application::CreateDepthImage()
@@ -345,6 +351,39 @@ void Application::Render()
 				vkCmdDrawIndexed(cmd, submesh.IndexCount, 1, submesh.BaseIndex, static_cast<int32_t>(submesh.BaseVertex), 0);
 			}
 		});
+	}
+	DynamicRendering::EndRendering(cmd);
+
+	m_ImGui.Begin();
+
+	ImGui::Begin("Directional Light");
+	ImGui::DragFloat3("Direction", &m_DirectionalLight.Direction.x, 0.01f, -1.0f, 1.0f);
+	ImGui::ColorEdit3("Color", &m_DirectionalLight.Color.x);
+	ImGui::DragFloat("Intensity", &m_DirectionalLight.Intensity, 0.1f, 0.0f, 20.0f);
+	ImGui::End();
+
+	AttachmentInfo imguiColorAttachment
+	{
+		.ImageView  = swapChain.GetCurrentImageView(),
+		.Format     = Format::BGRA8_UNorm,
+		.LoadOp     = LoadOp::Load,
+		.StoreOp    = StoreOp::Store,
+		.Layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+	};
+
+	const AttachmentInfo imguiColorAttachments[] { imguiColorAttachment };
+
+	RenderPassInfo imguiRenderPassInfo
+	{
+		.ColorAttachments = imguiColorAttachments,
+		.DepthAttachment  = nullptr,
+		.RenderArea       = { .offset = { 0, 0 }, .extent = extent },
+		.LayerCount       = 1
+	};
+
+	DynamicRendering::BeginRendering(cmd, imguiRenderPassInfo);
+	{
+		m_ImGui.End(m_Renderer.GetFrameCommandBuffer());
 	}
 	DynamicRendering::EndRendering(cmd);
 

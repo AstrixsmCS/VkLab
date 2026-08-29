@@ -1,3 +1,5 @@
+import BRDF;
+
 struct CameraData
 {
 	float4x4 ViewProjection;
@@ -101,15 +103,21 @@ float4 main(VertexOutput input) : SV_Target
 
 	// Metallic / Roughness
 	float metalness = mat.Metalness;
-	float roughness = mat.Roughness;
+	float linearRoughness = mat.Roughness;
 
 	if (mat.MetallicRoughnessIndex != 0)
 	{
 		const float4 metallicRoughness = g_Textures[mat.MetallicRoughnessIndex].Sample(uv);
 
-		roughness *= metallicRoughness.g;
+		linearRoughness *= metallicRoughness.g;
 		metalness *= metallicRoughness.b;
 	}
+
+	metalness = saturate(metalness);
+	linearRoughness = clamp(linearRoughness, 0.045, 1.0);
+
+	// Frostbite GGX roughness / alpha
+	const float roughness = linearRoughness * linearRoughness;
 
 	// Occlusion
 	float occlusion = 1.0;
@@ -123,20 +131,48 @@ float4 main(VertexOutput input) : SV_Target
 	const float3 H = normalize(L + V);
 
 	const float3 lightColor = LightColorIntensity.rgb;
-	const float lightIntensity = LightColorIntensity.a;
+	const float  lightIntensity = LightColorIntensity.a;
+
 	const float3 radiance = lightColor * lightIntensity;
 
-	// Simple Blinn-Phong lighting
-	const float NdotL = max(dot(N, L), 0.0);
-	const float NdotH = max(dot(N, H), 0.0);
+	// BRDF inputs
+	const float NdotL = saturate(dot(N, L));
+	const float NdotV = abs(dot(N, V)) + 0.00001;
+	const float NdotH = saturate(dot(N, H));
+	const float LdotH = saturate(dot(L, H));
 
+	// Dielectric F0 -> metallic F0
+	const float3 F0 = lerp(float3(0.04), albedo.rgb, metalness);
+
+	// Schlick Fresnel
+	const float3 F = FresnelSchlick(F0, 1.0, LdotH);
+
+	// Trowbridge-Reitz GGX
+	const float D = DistributionGGX(NdotH, roughness);
+
+	// Height-correlated Smith GGX
+	const float Vis = VisibilitySmithGGXCorrelated(NdotV, NdotL, roughness);
+
+	// Cook-Torrance specular BRDF
+	const float3 specular = SpecularCookTorrance(F, D, Vis);
+
+	// Frostbite / Disney diffuse
+	const float Fd = DiffuseDisney(NdotV, NdotL, LdotH, linearRoughness);
+
+	// Energy conservation / metallic workflow
+	const float3 kD = (1.0 - F) * (1.0 - metalness);
+
+	const float3 diffuse = kD * albedo.rgb * Fd / PI;
+
+	// Temporary ambient until IBL
 	const float3 ambient = albedo.rgb * 0.05 * occlusion;
-	const float3 diffuse = albedo.rgb * NdotL;
-	const float shininess = lerp(128.0, 8.0, roughness);
-	const float specularStrength = lerp(0.04, 1.0, metalness);
-	const float specular = NdotL > 0.0 ? pow(NdotH, shininess) * specularStrength : 0.0;
 
-	const float3 lighting = ambient + (diffuse + specular) * radiance;
+	// Rendering equation:
+	//
+	// Lo = (diffuse BRDF + specular BRDF) * incoming radiance * NdotL
+	const float3 directLighting = (diffuse + specular) * radiance * NdotL;
+
+	const float3 lighting = ambient + directLighting;
 
 	return float4(lighting, albedo.a);
 }

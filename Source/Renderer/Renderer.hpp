@@ -27,6 +27,7 @@ public:
 	uint32_t GetCurrentImageIndex() const { return m_CurrentImageIndex; }
 
 	VkCommandBuffer GetCurrentCommandBuffer() const { return m_FrameCommandBuffer.GetActiveCommandBuffer(); }
+	CommandBuffer& GetFrameCommandBuffer() { return m_FrameCommandBuffer; }
 
 	static constexpr uint32_t  MAX_FRAMES_IN_FLIGHT = 3;
 	static constexpr uint32_t GetFramesInFlight() { return MAX_FRAMES_IN_FLIGHT; }

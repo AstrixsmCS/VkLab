@@ -49,4 +49,5 @@ target_link_libraries(VkLab PRIVATE
 		fastgltf::fastgltf
 		stb::stb
 		mikktspace::mikktspace
+		imgui::imgui
 )
