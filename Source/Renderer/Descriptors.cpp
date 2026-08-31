@@ -6,26 +6,33 @@
 
 void Descriptor::Initialize()
 {
-	VkDevice device = RendererContext::Get().GetDevice();
+	const VkDevice device = RendererContext::Get().GetDevice();
 
-	VkDescriptorSetLayoutBinding bindings[2]
+	VkDescriptorSetLayoutBinding bindings[3]
 	{
 		{
 			.binding = 0,
-			.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
 			.descriptorCount = MAX_TEXTURES,
 			.stageFlags = VK_SHADER_STAGE_ALL
 		},
 		{
 			.binding = 1,
+			.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
+			.descriptorCount = MAX_SAMPLERS,
+			.stageFlags = VK_SHADER_STAGE_ALL
+		},
+		{
+			.binding = 2,
 			.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
 			.descriptorCount = MAX_STORAGE_IMAGES,
 			.stageFlags = VK_SHADER_STAGE_ALL
 		}
 	};
 
-	VkDescriptorBindingFlags bindingFlags[2]
+	VkDescriptorBindingFlags bindingFlags[3]
 	{
+		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
 		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
 		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT
 	};
@@ -33,7 +40,7 @@ void Descriptor::Initialize()
 	VkDescriptorSetLayoutBindingFlagsCreateInfo bindingFlagsInfo
 	{
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
-		.bindingCount = 2,
+		.bindingCount = 3,
 		.pBindingFlags = bindingFlags
 	};
 
@@ -42,17 +49,21 @@ void Descriptor::Initialize()
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
 		.pNext = &bindingFlagsInfo,
 		.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,
-		.bindingCount = 2,
+		.bindingCount = 3,
 		.pBindings = bindings
 	};
 
 	VK_CHECK(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &s_Layout));
 
-	VkDescriptorPoolSize poolSizes[2]
+	VkDescriptorPoolSize poolSizes[3]
 	{
 		{
-			.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
 			.descriptorCount = MAX_TEXTURES
+		},
+		{
+			.type = VK_DESCRIPTOR_TYPE_SAMPLER,
+			.descriptorCount = MAX_SAMPLERS
 		},
 		{
 			.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
@@ -65,7 +76,7 @@ void Descriptor::Initialize()
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
 		.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT,
 		.maxSets = 1,
-		.poolSizeCount = 2,
+		.poolSizeCount = 3,
 		.pPoolSizes = poolSizes
 	};
 
@@ -84,28 +95,40 @@ void Descriptor::Initialize()
 	s_FreeTextureIndices.reserve(MAX_TEXTURES - 1);
 
 	for (uint32_t i = MAX_TEXTURES; i > 1; --i)
+	{
 		s_FreeTextureIndices.push_back(i - 1);
+	}
+
+	s_FreeSamplerIndices.reserve(MAX_SAMPLERS);
+
+	for (uint32_t i = MAX_SAMPLERS; i > 0; --i)
+	{
+		s_FreeSamplerIndices.push_back(i - 1);
+	}
 
 	s_FreeStorageImageIndices.reserve(MAX_STORAGE_IMAGES);
 
 	for (uint32_t i = MAX_STORAGE_IMAGES; i > 0; --i)
+	{
 		s_FreeStorageImageIndices.push_back(i - 1);
+	}
 }
 
 void Descriptor::Shutdown()
 {
-	VkDevice device = RendererContext::Get().GetDevice();
+	const VkDevice device = RendererContext::Get().GetDevice();
 
 	s_FreeTextureIndices.clear();
+	s_FreeSamplerIndices.clear();
 	s_FreeStorageImageIndices.clear();
 
-	if (s_Pool)
+	if (s_Pool != VK_NULL_HANDLE)
 	{
 		vkDestroyDescriptorPool(device, s_Pool, nullptr);
 		s_Pool = VK_NULL_HANDLE;
 	}
 
-	if (s_Layout)
+	if (s_Layout != VK_NULL_HANDLE)
 	{
 		vkDestroyDescriptorSetLayout(device, s_Layout, nullptr);
 		s_Layout = VK_NULL_HANDLE;
@@ -114,10 +137,9 @@ void Descriptor::Shutdown()
 	s_Set = VK_NULL_HANDLE;
 }
 
-uint32_t Descriptor::RegisterTexture(VkImageView imageView, VkSampler sampler)
+uint32_t Descriptor::RegisterTexture(VkImageView imageView)
 {
 	assert(imageView != VK_NULL_HANDLE);
-	assert(sampler != VK_NULL_HANDLE);
 	assert(!s_FreeTextureIndices.empty());
 
 	const uint32_t index = s_FreeTextureIndices.back();
@@ -126,7 +148,7 @@ uint32_t Descriptor::RegisterTexture(VkImageView imageView, VkSampler sampler)
 
 	VkDescriptorImageInfo imageInfo
 	{
-		.sampler = sampler,
+		.sampler = VK_NULL_HANDLE,
 		.imageView = imageView,
 		.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 	};
@@ -138,7 +160,39 @@ uint32_t Descriptor::RegisterTexture(VkImageView imageView, VkSampler sampler)
 		.dstBinding = 0,
 		.dstArrayElement = index,
 		.descriptorCount = 1,
-		.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+		.pImageInfo = &imageInfo
+	};
+
+	vkUpdateDescriptorSets(RendererContext::Get().GetDevice(), 1, &write, 0, nullptr);
+
+	return index;
+}
+
+uint32_t Descriptor::RegisterSampler(VkSampler sampler)
+{
+	assert(sampler != VK_NULL_HANDLE);
+	assert(!s_FreeSamplerIndices.empty());
+
+	const uint32_t index = s_FreeSamplerIndices.back();
+
+	s_FreeSamplerIndices.pop_back();
+
+	VkDescriptorImageInfo imageInfo
+	{
+		.sampler = sampler,
+		.imageView = VK_NULL_HANDLE,
+		.imageLayout = VK_IMAGE_LAYOUT_UNDEFINED
+	};
+
+	VkWriteDescriptorSet write
+	{
+		.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		.dstSet = s_Set,
+		.dstBinding = 1,
+		.dstArrayElement = index,
+		.descriptorCount = 1,
+		.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
 		.pImageInfo = &imageInfo
 	};
 
@@ -167,7 +221,7 @@ uint32_t Descriptor::RegisterStorageImage(VkImageView imageView)
 	{
 		.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 		.dstSet = s_Set,
-		.dstBinding = 1,
+		.dstBinding = 2,
 		.dstArrayElement = index,
 		.descriptorCount = 1,
 		.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
@@ -187,6 +241,16 @@ void Descriptor::UnregisterTexture(uint32_t index)
 	assert(index < MAX_TEXTURES);
 
 	s_FreeTextureIndices.push_back(index);
+}
+
+void Descriptor::UnregisterSampler(uint32_t index)
+{
+	if (index == INVALID_INDEX)
+		return;
+
+	assert(index < MAX_SAMPLERS);
+
+	s_FreeSamplerIndices.push_back(index);
 }
 
 void Descriptor::UnregisterStorageImage(uint32_t index)

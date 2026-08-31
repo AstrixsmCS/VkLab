@@ -6,6 +6,7 @@
 #include "CommandBuffer.hpp"
 
 #include <vector>
+#include <array>
 
 struct SDL_Window;
 
@@ -44,7 +45,7 @@ private:
 
 	TimelineSemaphore m_FrameTimeline;
 	uint64_t m_NextSignalValue = 1;
-	uint64_t m_CurrentSignalValue = 0;
+	std::array<uint64_t, MAX_FRAMES_IN_FLIGHT> m_FrameSignalValues{};
 
 	uint32_t m_CurrentImageIndex = UINT32_MAX;
 

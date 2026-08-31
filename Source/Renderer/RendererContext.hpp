@@ -2,6 +2,8 @@
 
 #include "Vulkan.hpp"
 
+#include "CommandBuffer.hpp"
+
 #include <unordered_set>
 
 struct SDL_Window;
@@ -19,6 +21,13 @@ public:
 
 	VkQueue GetGraphicsQueue() const { return m_GraphicsQueue; }
 	uint32_t GetGraphicsFamily() const { return m_GraphicsFamily; }
+	VkQueue GetComputeQueue() const { return m_ComputeQueue; }
+	uint32_t GetComputeFamily() const { return m_ComputeFamily; }
+	VkQueue GetTransferQueue() const { return m_TransferQueue; }
+	uint32_t GetTransferFamily() const { return m_TransferFamily; }
+
+	CommandPool& GetCommandPool() { return *m_CommandPool; }
+	const CommandPool& GetCommandPool() const { return *m_CommandPool; }
 
 	const VkPhysicalDeviceProperties& GetPhysicalDeviceProperties() const { return m_PhysicalDeviceProperties; }
 	const VkPhysicalDeviceLimits& GetPhysicalDeviceLimits() const { return m_PhysicalDeviceProperties.limits; }
@@ -41,6 +50,12 @@ private:
 
 	VkQueue m_GraphicsQueue = VK_NULL_HANDLE;
 	uint32_t m_GraphicsFamily = UINT32_MAX;
+	VkQueue m_ComputeQueue = VK_NULL_HANDLE;
+	uint32_t m_ComputeFamily = UINT32_MAX;
+	VkQueue m_TransferQueue = VK_NULL_HANDLE;
+	uint32_t m_TransferFamily = UINT32_MAX;
+
+	std::unique_ptr<CommandPool> m_CommandPool = nullptr;
 
 	std::unordered_set<std::string> m_SupportedExtensions;
 

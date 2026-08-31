@@ -42,23 +42,63 @@ void VertexBuffer::Create(const void* data, uint64_t size, VertexBufferUsage usa
 	m_Size = size;
 	m_Usage = usage;
 
-	VkBufferCreateInfo bufferInfo
+	VkBuffer stagingBuffer = VK_NULL_HANDLE;
+	VmaAllocation stagingAllocation = VK_NULL_HANDLE;
+
+	VkBufferCreateInfo stagingBufferInfo
 	{
 		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
 		.size = size,
-		.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+		.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 		.sharingMode = VK_SHARING_MODE_EXCLUSIVE
 	};
 
-	VmaAllocationCreateInfo allocationInfo
+	VmaAllocationCreateInfo stagingAllocationInfo
 	{
 		.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
 		.usage = VMA_MEMORY_USAGE_AUTO
 	};
 
+	VK_CHECK(vmaCreateBuffer(Allocator::GetAllocator(), &stagingBufferInfo, &stagingAllocationInfo, &stagingBuffer, &stagingAllocation, nullptr));
+
+	void* mappedData = nullptr;
+
+	VK_CHECK(vmaMapMemory(Allocator::GetAllocator(), stagingAllocation, &mappedData));
+
+	std::memcpy(mappedData, data, size);
+
+	vmaUnmapMemory(Allocator::GetAllocator(), stagingAllocation);
+
+	VkBufferCreateInfo bufferInfo
+	{
+		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+		.size = size,
+		.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+		.sharingMode = VK_SHARING_MODE_EXCLUSIVE
+	};
+
+	VmaAllocationCreateInfo allocationInfo
+	{
+		.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
+	};
+
 	VK_CHECK(vmaCreateBuffer(Allocator::GetAllocator(), &bufferInfo, &allocationInfo, &m_Buffer, &m_Allocation, nullptr));
 
-	SetData(data, size);
+	CommandPool& commandPool = RendererContext::Get().GetCommandPool();
+	VkCommandBuffer commandBuffer = commandPool.AllocateCommandBuffer(true, false);
+
+	VkBufferCopy copyRegion
+	{
+		.srcOffset = 0,
+		.dstOffset = 0,
+		.size = size
+	};
+
+	vkCmdCopyBuffer(commandBuffer, stagingBuffer, m_Buffer, 1, &copyRegion);
+
+	commandPool.FlushCommandBuffer(commandBuffer);
+
+	vmaDestroyBuffer(Allocator::GetAllocator(), stagingBuffer, stagingAllocation);
 }
 
 void VertexBuffer::Destroy()
@@ -123,26 +163,63 @@ void IndexBuffer::Create(const void* data, uint64_t size)
 
 	m_Size = size;
 
-	VkBufferCreateInfo bufferInfo
+	VkBuffer stagingBuffer = VK_NULL_HANDLE;
+	VmaAllocation stagingAllocation = VK_NULL_HANDLE;
+
+	VkBufferCreateInfo stagingBufferInfo
 	{
 		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
 		.size = size,
-		.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+		.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 		.sharingMode = VK_SHARING_MODE_EXCLUSIVE
 	};
 
-	VmaAllocationCreateInfo allocationInfo
+	VmaAllocationCreateInfo stagingAllocationInfo
 	{
 		.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
 		.usage = VMA_MEMORY_USAGE_AUTO
 	};
 
+	VK_CHECK(vmaCreateBuffer(Allocator::GetAllocator(), &stagingBufferInfo, &stagingAllocationInfo, &stagingBuffer, &stagingAllocation, nullptr));
+
+	void* mappedData = nullptr;
+
+	VK_CHECK(vmaMapMemory(Allocator::GetAllocator(), stagingAllocation, &mappedData));
+
+	std::memcpy(mappedData, data, size);
+
+	vmaUnmapMemory(Allocator::GetAllocator(), stagingAllocation);
+
+	VkBufferCreateInfo bufferInfo
+	{
+		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+		.size = size,
+		.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+		.sharingMode = VK_SHARING_MODE_EXCLUSIVE
+	};
+
+	VmaAllocationCreateInfo allocationInfo
+	{
+		.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
+	};
+
 	VK_CHECK(vmaCreateBuffer(Allocator::GetAllocator(), &bufferInfo, &allocationInfo, &m_Buffer, &m_Allocation, nullptr));
 
-	void* mapped = nullptr;
-	VK_CHECK(vmaMapMemory(Allocator::GetAllocator(), m_Allocation, &mapped));
-	std::memcpy(mapped, data, size);
-	vmaUnmapMemory(Allocator::GetAllocator(), m_Allocation);
+	CommandPool& commandPool = RendererContext::Get().GetCommandPool();
+	VkCommandBuffer commandBuffer = commandPool.AllocateCommandBuffer(true, false);
+
+	VkBufferCopy copyRegion
+	{
+		.srcOffset = 0,
+		.dstOffset = 0,
+		.size = size
+	};
+
+	vkCmdCopyBuffer(commandBuffer, stagingBuffer, m_Buffer, 1, &copyRegion);
+
+	commandPool.FlushCommandBuffer(commandBuffer);
+
+	vmaDestroyBuffer(Allocator::GetAllocator(), stagingBuffer, stagingAllocation);
 }
 
 void IndexBuffer::Destroy()

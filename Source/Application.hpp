@@ -29,6 +29,17 @@ struct CameraData
 	glm::vec3 CameraPosition{ 0.0f };
 };
 
+enum class DefaultSampler
+{
+	LinearRepeat = 0,
+	LinearClamp,
+	NearestClamp,
+	AnisotropicRepeat,
+	ShadowCompare,
+
+	Count
+};
+
 struct DirectionalLight
 {
 	glm::vec3 Direction{ -1.0f, -1.0f, -1.0f };
@@ -38,8 +49,10 @@ struct DirectionalLight
 
 struct PushConstants
 {
-	glm::mat4 Model{ 1.0f };
+	glm::mat4       Model{ 1.0f };
+
 	VkDeviceAddress Camera = 0;
+
 	VkDeviceAddress MaterialBuffer = 0;
 	uint32_t        MaterialIndex  = 0;
 
@@ -47,8 +60,8 @@ struct PushConstants
 	uint32_t        _Pad1;
 	uint32_t        _Pad2;
 
-	glm::vec4 LightDirection;
-	glm::vec4 LightColorIntensity;
+	glm::vec4       LightDirection;
+	glm::vec4       LightColorIntensity;
 
 };
 
@@ -61,15 +74,20 @@ public:
 private:
 	void ShowError(const std::string& errorMessage) const;
 
-	bool           InitializeVulkan();
-	bool           CreateShader();
-	bool           CreateGraphicsPipeline();
+	bool InitializeVulkan();
+	bool CreateShader();
+	bool CreateGraphicsPipeline();
 	bool LoadMesh();
+
+	void CreateDefaultSamplers();
+	void DestroyDefaultSamplers();
+
+	const std::shared_ptr<Sampler>& GetDefaultSampler(DefaultSampler sampler) const { return m_DefaultSamplers[static_cast<size_t>(sampler)]; }
 
 	void CreateDepthImage();
 	void DestroyDepthImage();
 
-	void           Render();
+	void Render();
 private:
 	SDL_Window* m_Window  = nullptr;
 	uint32_t    m_Width   = 1280;
@@ -94,4 +112,6 @@ private:
 	UniformBuffer m_CameraBuffer;
 
 	Image m_DepthImage;
+
+	std::array<std::shared_ptr<Sampler>, static_cast<size_t>(DefaultSampler::Count)> m_DefaultSamplers;
 };

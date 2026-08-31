@@ -6,15 +6,17 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <memory>
 
 struct TextureSpecification
 {
 	std::string DebugName;
 
-	Format Format = Format::RGBA8_UNorm;
+	uint32_t Width = 1;
+	uint32_t Height = 1;
+	uint32_t Depth = 1;
 
-	SamplerFilter Filter = SamplerFilter::Linear;
-	SamplerWrap Wrap = SamplerWrap::Repeat;
+	Format Format = Format::RGBA8_UNorm;
 
 	bool GenerateMips = true;
 };
@@ -28,8 +30,13 @@ public:
 	Texture(const Texture&) = delete;
 	Texture& operator=(const Texture&) = delete;
 
-	void Create(const TextureSpecification& specification, const void* data, uint32_t width, uint32_t height);
+	void Create(const TextureSpecification& specification, const void* data);
 	void Create(const TextureSpecification& specification, const std::filesystem::path& path);
+
+	void CreateCube(const TextureSpecification& specification, const void* data);
+	void Create3D(const TextureSpecification& specification, const void* data);
+
+	void GenerateMips();
 
 	void Destroy();
 
@@ -38,10 +45,11 @@ public:
 	const Image& GetImage() const { return m_Image; }
 	Image& GetImage() { return m_Image; }
 
-	VkSampler GetSampler() const { return m_Sampler; }
+	VkImageView GetImageView() const { return m_Image.GetView(); }
 
 	uint32_t GetWidth() const { return m_Image.GetWidth(); }
 	uint32_t GetHeight() const { return m_Image.GetHeight(); }
+	uint32_t GetDepth() const { return m_Image.GetDepth(); }
 
 	uint32_t GetMipCount() const { return m_Image.GetMipCount(); }
 
@@ -51,21 +59,11 @@ public:
 
 	const TextureSpecification& GetSpecification() const { return m_Specification; }
 private:
-	void Upload(const void* data, size_t size);
-	void GenerateMips();
-	void CreateSampler();
-
-	// TODO: temp - move to a proper upload/transfer context
-	VkCommandBuffer BeginTransientCommandBuffer();
-	void EndTransientCommandBuffer(VkCommandBuffer commandBuffer);
+	void SetData(const void* data, size_t size);
 private:
 	TextureSpecification m_Specification;
 
 	Image m_Image;
 
-	VkSampler m_Sampler = VK_NULL_HANDLE;
-
 	uint32_t m_TextureIndex = Descriptor::INVALID_INDEX;
-
-	VkCommandPool m_TransientCommandPool = VK_NULL_HANDLE; //TODO: temp
 };

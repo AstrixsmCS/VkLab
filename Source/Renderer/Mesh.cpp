@@ -308,7 +308,12 @@ bool Mesh::Load(const std::filesystem::path& path)
 
 				if (pixels)
 				{
-					texture->Create(spec, pixels, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+					spec.Width  = static_cast<uint32_t>(width);
+					spec.Height = static_cast<uint32_t>(height);
+					spec.Depth  = 1;
+
+					texture->Create(spec, pixels);
+
 					stbi_image_free(pixels);
 					loaded = texture->IsValid();
 				}
@@ -339,7 +344,12 @@ bool Mesh::Load(const std::filesystem::path& path)
 
 						if (pixels)
 						{
-							texture->Create(spec, pixels, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+							spec.Width  = static_cast<uint32_t>(width);
+							spec.Height = static_cast<uint32_t>(height);
+							spec.Depth  = 1;
+
+							texture->Create(spec, pixels);
+
 							stbi_image_free(pixels);
 							loaded = texture->IsValid();
 						}

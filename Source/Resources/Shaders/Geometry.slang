@@ -37,7 +37,10 @@ struct VertexOutput
 };
 
 // Bindless arrays
-[[vk::binding(0, 0)]] Sampler2D g_Textures[];
+[[vk::binding(0, 0)]] Texture2D<float4> g_Textures[];
+[[vk::binding(1, 0)]] SamplerState      g_Samplers[];
+
+static const uint ANISOTROPIC_REPEAT_SAMPLER = 3;
 
 [[vk::push_constant]]
 cbuffer PushConstants
@@ -84,7 +87,7 @@ float4 main(VertexOutput input) : SV_Target
 	float4 albedo = mat.Albedo;
 
 	if (mat.AlbedoIndex != 0)
-		albedo *= g_Textures[mat.AlbedoIndex].Sample(uv);
+		albedo *= g_Textures[mat.AlbedoIndex].Sample(g_Samplers[ANISOTROPIC_REPEAT_SAMPLER], uv);
 
 	// Normal
 	float3 N = normalize(input.Normal);
@@ -96,7 +99,7 @@ float4 main(VertexOutput input) : SV_Target
 
 		const float3 B = cross(N, T) * input.Tangent.w;
 
-		const float3 tangentNormal = g_Textures[mat.NormalIndex].Sample(uv).xyz * 2.0 - 1.0;
+		const float3 tangentNormal = g_Textures[mat.NormalIndex].Sample(g_Samplers[ANISOTROPIC_REPEAT_SAMPLER], uv).xyz * 2.0 - 1.0;
 
 		N = normalize(tangentNormal.x * T + tangentNormal.y * B + tangentNormal.z * N);
 	}
@@ -107,7 +110,7 @@ float4 main(VertexOutput input) : SV_Target
 
 	if (mat.MetallicRoughnessIndex != 0)
 	{
-		const float4 metallicRoughness = g_Textures[mat.MetallicRoughnessIndex].Sample(uv);
+		const float4 metallicRoughness = g_Textures[mat.MetallicRoughnessIndex].Sample(g_Samplers[ANISOTROPIC_REPEAT_SAMPLER], uv);
 
 		linearRoughness *= metallicRoughness.g;
 		metalness *= metallicRoughness.b;
@@ -123,7 +126,7 @@ float4 main(VertexOutput input) : SV_Target
 	float occlusion = 1.0;
 
 	if (mat.OcclusionIndex != 0)
-		occlusion = g_Textures[mat.OcclusionIndex].Sample(uv).r;
+		occlusion = g_Textures[mat.OcclusionIndex].Sample(g_Samplers[ANISOTROPIC_REPEAT_SAMPLER], uv).r;
 
 	// Directional light
 	const float3 L = normalize(-LightDirection.xyz);

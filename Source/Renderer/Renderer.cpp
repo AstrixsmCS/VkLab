@@ -10,7 +10,7 @@ void Renderer::Initialize(SDL_Window* windowHandle)
 	m_SwapChain->Initialize();
 
 	CreateSyncObjects();
-	m_FrameCommandBuffer.Create(MAX_FRAMES_IN_FLIGHT, "Frame Command Buffer");
+	m_FrameCommandBuffer.Create(MAX_FRAMES_IN_FLIGHT, false, "Frame Command Buffer");
 }
 
 void Renderer::Shutdown()
@@ -27,21 +27,16 @@ void Renderer::Shutdown()
 
 bool Renderer::BeginFrame()
 {
-	m_CurrentSignalValue = m_NextSignalValue++;
+	const uint64_t waitValue = m_FrameSignalValues[s_CurrentFrameIndex];
 
-	// Wait before reusing this frame's semaphore slot
-	if (m_CurrentSignalValue > MAX_FRAMES_IN_FLIGHT)
-	{
-		const uint64_t waitValue = m_CurrentSignalValue - MAX_FRAMES_IN_FLIGHT;
+	if (waitValue != 0)
 		m_FrameTimeline.Wait(waitValue);
-	}
 
 	m_CurrentImageIndex = m_SwapChain->AcquireNextImage(GetImageAvailableSemaphore());
 
 	if (m_CurrentImageIndex == UINT32_MAX)
 		return false;
 
-	m_FrameCommandBuffer.Reset();
 	m_FrameCommandBuffer.Begin();
 
 	return true;
@@ -50,6 +45,8 @@ bool Renderer::BeginFrame()
 void Renderer::EndFrame()
 {
 	m_FrameCommandBuffer.End();
+
+	const uint64_t signalValue = m_NextSignalValue++;
 
 	const VkSemaphoreSubmitInfo imageAvailableWait
 	{
@@ -68,7 +65,7 @@ void Renderer::EndFrame()
 		{
 			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
 			.semaphore = m_FrameTimeline.GetHandle(),
-			.value = m_CurrentSignalValue,
+			.value = signalValue,
 			.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
 		},
 	};
@@ -92,6 +89,8 @@ void Renderer::EndFrame()
 
 	VK_CHECK(vkQueueSubmit2(RendererContext::Get().GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE));
 
+	m_FrameSignalValues[s_CurrentFrameIndex] = signalValue;
+
 	m_SwapChain->Present(GetRenderFinishedSemaphore(m_CurrentImageIndex));
 
 	s_CurrentFrameIndex = (s_CurrentFrameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
@@ -101,9 +100,10 @@ void Renderer::CreateSyncObjects()
 {
 	VkDevice device = RendererContext::Get().GetDevice();
 
-	uint32_t imageCount = m_SwapChain->GetImageCount();
+	const uint32_t imageCount = m_SwapChain->GetImageCount();
 
 	m_FrameTimeline.Initialize(0);
+	m_FrameSignalValues.fill(0);
 
 	VkSemaphoreCreateInfo semaphoreInfo
 	{
@@ -114,14 +114,10 @@ void Renderer::CreateSyncObjects()
 	m_RenderFinishedSemaphores.resize(imageCount);
 
 	for (VkSemaphore& semaphore : m_ImageAvailableSemaphores)
-	{
 		VK_CHECK(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphore));
-	}
 
 	for (VkSemaphore& semaphore : m_RenderFinishedSemaphores)
-	{
 		VK_CHECK(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphore));
-	}
 }
 
 void Renderer::DestroySyncObjects()

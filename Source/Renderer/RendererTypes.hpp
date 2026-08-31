@@ -226,7 +226,7 @@ enum class SamplerMip : uint8_t
 enum class SamplerWrap : uint8_t
 {
 	Repeat = 0,
-	Clamp,
+	ClampToEdge,
 	ClampToBorder,
 	MirrorRepeat,
 	MirrorClampToEdge

@@ -163,6 +163,8 @@ void RendererContext::Initialize()
 	s_Instance->SetupDebugMessenger();
 	s_Instance->PickPhysicalDevice();
 	s_Instance->CreateLogicalDevice();
+
+	s_Instance->m_CommandPool = std::make_unique<CommandPool>();
 }
 
 void RendererContext::Shutdown()
@@ -174,10 +176,19 @@ void RendererContext::Shutdown()
 	{
 		vkDeviceWaitIdle(s_Instance->m_LogicalDevice);
 
+		s_Instance->m_CommandPool.reset();
+
 		vkDestroyDevice(s_Instance->m_LogicalDevice, nullptr);
 
 		s_Instance->m_LogicalDevice = VK_NULL_HANDLE;
+
 		s_Instance->m_GraphicsQueue = VK_NULL_HANDLE;
+		s_Instance->m_ComputeQueue = VK_NULL_HANDLE;
+		s_Instance->m_TransferQueue = VK_NULL_HANDLE;
+
+		s_Instance->m_GraphicsFamily = UINT32_MAX;
+		s_Instance->m_ComputeFamily = UINT32_MAX;
+		s_Instance->m_TransferFamily = UINT32_MAX;
 	}
 
 	if (s_Instance->m_DebugMessenger)
@@ -379,15 +390,19 @@ void RendererContext::PickPhysicalDevice()
 void RendererContext::CreateLogicalDevice()
 {
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// Graphics Queue Family
+	// Queue Families
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 	uint32_t queueFamilyCount = 0;
 	vkGetPhysicalDeviceQueueFamilyProperties(m_PhysicalDevice, &queueFamilyCount, nullptr);
+
 	assert(queueFamilyCount > 0 && "Physical device has no queue families!");
+
 	std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
 	vkGetPhysicalDeviceQueueFamilyProperties(m_PhysicalDevice, &queueFamilyCount, queueFamilies.data());
 
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// Graphics Queue Family
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	for (uint32_t i = 0; i < queueFamilyCount; i++)
 	{
 		if (queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
@@ -399,15 +414,87 @@ void RendererContext::CreateLogicalDevice()
 
 	assert(m_GraphicsFamily != UINT32_MAX && "Could not find a graphics queue family!");
 
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// Compute Queue Family
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// Prefer a dedicated compute queue family.
+	for (uint32_t i = 0; i < queueFamilyCount; i++)
+	{
+		const VkQueueFlags flags = queueFamilies[i].queueFlags;
+
+		if ((flags & VK_QUEUE_COMPUTE_BIT) &&
+			!(flags & VK_QUEUE_GRAPHICS_BIT))
+		{
+			m_ComputeFamily = i;
+			break;
+		}
+	}
+
+	// Fall back to the graphics queue family.
+	if (m_ComputeFamily == UINT32_MAX)
+		m_ComputeFamily = m_GraphicsFamily;
+
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// Transfer Queue Family
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// Prefer a dedicated transfer queue family.
+	for (uint32_t i = 0; i < queueFamilyCount; i++)
+	{
+		const VkQueueFlags flags = queueFamilies[i].queueFlags;
+
+		if ((flags & VK_QUEUE_TRANSFER_BIT) &&
+			!(flags & VK_QUEUE_GRAPHICS_BIT) &&
+			!(flags & VK_QUEUE_COMPUTE_BIT))
+		{
+			m_TransferFamily = i;
+			break;
+		}
+	}
+
+	// Prefer the compute family as the first fallback.
+	if (m_TransferFamily == UINT32_MAX &&
+		queueFamilies[m_ComputeFamily].queueFlags & VK_QUEUE_TRANSFER_BIT)
+	{
+		m_TransferFamily = m_ComputeFamily;
+	}
+
+	// Finally fall back to graphics.
+	if (m_TransferFamily == UINT32_MAX)
+	{
+		assert(queueFamilies[m_GraphicsFamily].queueFlags & VK_QUEUE_TRANSFER_BIT && "Could not find a transfer queue family!");
+		m_TransferFamily = m_GraphicsFamily;
+	}
+
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// Queue Creation
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	constexpr float queuePriority = 1.0f;
 
-	const VkDeviceQueueCreateInfo queueInfo
+	std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+	std::vector<uint32_t> uniqueQueueFamilies;
+
+	const auto addQueueFamily = [&](uint32_t familyIndex)
 	{
-		.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-		.queueFamilyIndex = m_GraphicsFamily,
-		.queueCount = 1,
-		.pQueuePriorities = &queuePriority
+		for (uint32_t existingFamily : uniqueQueueFamilies)
+		{
+			if (existingFamily == familyIndex)
+				return;
+		}
+
+		uniqueQueueFamilies.push_back(familyIndex);
+
+		queueCreateInfos.push_back(
+		{
+			.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+			.queueFamilyIndex = familyIndex,
+			.queueCount = 1,
+			.pQueuePriorities = &queuePriority
+		});
 	};
+
+	addQueueFamily(m_GraphicsFamily);
+	addQueueFamily(m_ComputeFamily);
+	addQueueFamily(m_TransferFamily);
 
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	// Supported Features
@@ -457,6 +544,7 @@ void RendererContext::CreateLogicalDevice()
 	assert(supportedFeatures12.descriptorBindingStorageImageUpdateAfterBind && "Storage-image update-after-bind is not supported!");
 	assert(supportedFeatures12.shaderSampledImageArrayNonUniformIndexing && "Non-uniform sampled image indexing is not supported!");
 
+	assert(supportedFeatures.features.samplerAnisotropy && "Sampler Anisotropy is not supported!");
 	assert(supportedFeatures.features.shaderInt64 && "Shader Int64 is not supported!");
 
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -502,6 +590,7 @@ void RendererContext::CreateLogicalDevice()
 		.pNext = &features11,
 		.features =
 		{
+			.samplerAnisotropy = VK_TRUE,
 			.shaderInt64 = VK_TRUE
 		}
 	};
@@ -546,8 +635,8 @@ void RendererContext::CreateLogicalDevice()
 	{
 		.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
 		.pNext = &features,
-		.queueCreateInfoCount = 1,
-		.pQueueCreateInfos = &queueInfo,
+		.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size()),
+		.pQueueCreateInfos = queueCreateInfos.data(),
 		.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size()),
 		.ppEnabledExtensionNames = deviceExtensions.data(),
 		.pEnabledFeatures = nullptr
@@ -558,12 +647,20 @@ void RendererContext::CreateLogicalDevice()
 	volkLoadDevice(m_LogicalDevice);
 
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// Graphics Queue
+	// Queues
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	vkGetDeviceQueue(m_LogicalDevice, m_GraphicsFamily, 0, &m_GraphicsQueue);
+	vkGetDeviceQueue(m_LogicalDevice, m_ComputeFamily, 0, &m_ComputeQueue);
+	vkGetDeviceQueue(m_LogicalDevice, m_TransferFamily, 0, &m_TransferQueue);
 
 	assert(m_GraphicsQueue && "Could not get graphics queue!");
+	assert(m_ComputeQueue && "Could not get compute queue!");
+	assert(m_TransferQueue && "Could not get transfer queue!");
+
+	std::println("[Renderer] Graphics queue family: {}", m_GraphicsFamily);
+	std::println("[Renderer] Compute queue family: {}", m_ComputeFamily);
+	std::println("[Renderer] Transfer queue family: {}", m_TransferFamily);
 
 	if (m_EnableDebugMarkers)
 		std::println("[Renderer] Debug markers enabled.");

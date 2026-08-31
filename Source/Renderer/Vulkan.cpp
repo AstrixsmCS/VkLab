@@ -303,10 +303,10 @@ VkSamplerAddressMode ToVulkan(SamplerWrap wrap)
 	switch (wrap)
 	{
 		case SamplerWrap::Repeat:            return VK_SAMPLER_ADDRESS_MODE_REPEAT;
-		case SamplerWrap::Clamp:             return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+		case SamplerWrap::ClampToEdge:       return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 		case SamplerWrap::ClampToBorder:     return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
-		case SamplerWrap::MirrorRepeat:       return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
-		case SamplerWrap::MirrorClampToEdge:  return VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE;
+		case SamplerWrap::MirrorRepeat:      return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+		case SamplerWrap::MirrorClampToEdge: return VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE;
 	}
 
 	return VK_SAMPLER_ADDRESS_MODE_REPEAT;
