@@ -108,17 +108,37 @@ void Texture::Create(const TextureSpecification& specification, const std::files
 	int height = 0;
 	int channels = 0;
 
-	stbi_uc* pixels = stbi_load(
-		path.string().c_str(),
-		&width,
-		&height,
-		&channels,
-		STBI_rgb_alpha
-	);
+	TextureSpecification textureSpecification = specification;
+
+	const std::string pathString = path.string();
+	const bool isHDR = stbi_is_hdr(pathString.c_str()) != 0;
+
+	void* pixels = nullptr;
+
+	if (isHDR)
+	{
+		pixels = stbi_loadf(
+			pathString.c_str(),
+			&width,
+			&height,
+			&channels,
+			STBI_rgb_alpha
+		);
+
+		textureSpecification.Format = Format::RGBA32_Float;
+	}
+	else
+	{
+		pixels = stbi_load(
+			pathString.c_str(),
+			&width,
+			&height,
+			&channels,
+			STBI_rgb_alpha
+		);
+	}
 
 	assert(pixels && "Failed to load texture!");
-
-	TextureSpecification textureSpecification = specification;
 
 	if (textureSpecification.DebugName.empty())
 	{

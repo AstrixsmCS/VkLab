@@ -20,9 +20,6 @@ struct FrameContext
 	CommandPool GraphicsCommandPool;
 	CommandBuffer GraphicsCommandBuffer;
 
-	CommandPool ComputeCommandPool;
-	CommandBuffer ComputeCommandBuffer;
-
 	std::vector<VkCommandBuffer> CommandBuffers;
 
 	FrameContext()
@@ -38,7 +35,6 @@ struct FrameContext
 	void Reset()
 	{
 		GraphicsCommandPool.Reset();
-		ComputeCommandPool.Reset();
 
 		CommandBuffers.clear();
 	}
@@ -56,10 +52,8 @@ public:
 		for (auto& frame : m_Frames)
 		{
 			frame.GraphicsCommandPool.Create(context.GetGraphicsFamily());
-			frame.ComputeCommandPool.Create(context.GetComputeFamily());
 
 			frame.GraphicsCommandBuffer = frame.GraphicsCommandPool.AllocateCommandBuffer();
-			frame.ComputeCommandBuffer = frame.ComputeCommandPool.AllocateCommandBuffer();
 
 			frame.CommandBuffers.clear();
 		}
@@ -70,10 +64,8 @@ public:
 		for (auto& frame : m_Frames)
 		{
 			frame.GraphicsCommandPool.Destroy();
-			frame.ComputeCommandPool.Destroy();
 
 			frame.GraphicsCommandBuffer = {};
-			frame.ComputeCommandBuffer = {};
 
 			frame.CommandBuffers.clear();
 		}

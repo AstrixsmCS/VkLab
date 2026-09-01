@@ -29,6 +29,14 @@ void Application::Shutdown()
 {
 	vkDeviceWaitIdle(RendererContext::Get().GetDevice());
 
+	m_ComputePipeline.Shutdown();
+
+	if (m_ComputeShader)
+	{
+		m_ComputeShader->Shutdown();
+		m_ComputeShader.reset();
+	}
+
 	m_Pipeline.Shutdown();
 
 	if (m_Shader)
@@ -129,15 +137,15 @@ bool Application::InitializeVulkan()
 	for (UniformBuffer& cameraBuffer : m_CameraBuffers)
 		cameraBuffer.Create(sizeof(CameraData));
 
-	if (!CreateShader())
+	if (!CreateGeometryPass())
 	{
-		ShowError("Error creating shader modules.");
+		ShowError("Unable to initialize the geometry pass.");
 		return false;
 	}
 
-	if (!CreateGraphicsPipeline())
+	if (!CreateComputePass())
 	{
-		ShowError("Unable to initialize the graphics pipeline.");
+		ShowError("Unable to initialize the compute pass.");
 		return false;
 	}
 
@@ -164,15 +172,14 @@ bool Application::InitializeVulkan()
 	return true;
 }
 
-bool Application::CreateShader()
+bool Application::CreateGeometryPass()
 {
 	m_Shader = std::make_shared<Shader>();
 	m_Shader->Load("Resources/Shaders/Geometry.slang");
-	return m_Shader->IsValid();
-}
 
-bool Application::CreateGraphicsPipeline()
-{
+	if (!m_Shader->IsValid())
+		return false;
+
 	PipelineSpecification spec;
 	spec.Shader         = m_Shader;
 	spec.ColorFormats   = { Format::BGRA8_UNorm };
@@ -199,9 +206,28 @@ bool Application::CreateGraphicsPipeline()
 	return m_Pipeline.GetPipeline() != VK_NULL_HANDLE;
 }
 
+bool Application::CreateComputePass()
+{
+	m_ComputeShader = std::make_shared<Shader>();
+	m_ComputeShader->Load("Resources/Shaders/SimpleCompute.slang");
+
+	if (!m_ComputeShader->IsValid())
+		return false;
+
+	ComputePipelineSpecification specification
+	{
+		.Shader = m_ComputeShader,
+		.DebugName = "Simple Compute Pipeline"
+	};
+
+	m_ComputePipeline.Create(specification);
+
+	return m_ComputePipeline.GetPipeline() != VK_NULL_HANDLE;
+}
+
 bool Application::LoadMesh()
 {
-	return m_Mesh.Load("Resources/Meshes/Sponza/Sponza.gltf");
+	return m_Mesh.Load("Resources/Meshes/DamagedHelmet/DamagedHelmet.glb");
 }
 
 void Application::CreateDefaultSamplers()
@@ -350,6 +376,11 @@ void Application::Render()
 	SwapChain& swapChain = m_Renderer.GetSwapChain();
 	const VkExtent2D extent = swapChain.GetExtent();
 
+	// Minimal compute pass used to validate compute pipeline creation and dispatch.
+	// It intentionally has no resources, so no compute-to-graphics barrier is needed.
+	m_ComputePipeline.Bind(cmd);
+	vkCmdDispatch(cmd, (extent.width + 7) / 8, (extent.height + 7) / 8, 1);
+
 	const float aspectRatio = static_cast<float>(extent.width) / static_cast<float>(extent.height);
 	m_Camera.SetPerspective(glm::radians(60.0f), aspectRatio, 0.1f, 1000.0f);
 
@@ -472,6 +503,10 @@ void Application::Render()
 	m_ImGui.Begin();
 
 	ImGui::Begin("Directional Light");
+	const ImGuiIO& io = ImGui::GetIO();
+	ImGui::Text("FPS: %.1f", io.Framerate);
+	ImGui::Text("Frame time: %.3f ms", io.Framerate > 0.0f ? 1000.0f / io.Framerate : 0.0f);
+	ImGui::Separator();
 	ImGui::DragFloat3("Direction", &m_DirectionalLight.Direction.x, 0.01f, -1.0f, 1.0f);
 	ImGui::ColorEdit3("Color", &m_DirectionalLight.Color.x);
 	ImGui::DragFloat("Intensity", &m_DirectionalLight.Intensity, 0.1f, 0.0f, 20.0f);

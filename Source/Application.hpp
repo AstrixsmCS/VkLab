@@ -7,6 +7,7 @@
 #include "Renderer/TimelineSemaphore.hpp"
 #include "Renderer/DynamicRendering.hpp"
 #include "Renderer/GraphicsPipeline.hpp"
+#include "Renderer/ComputePipeline.hpp"
 #include "Renderer/Buffer.hpp"
 #include "Renderer/Renderer.hpp"
 #include "Renderer/Mesh.hpp"
@@ -75,8 +76,8 @@ private:
 	void ShowError(const std::string& errorMessage) const;
 
 	bool InitializeVulkan();
-	bool CreateShader();
-	bool CreateGraphicsPipeline();
+	bool CreateGeometryPass();
+	bool CreateComputePass();
 	bool LoadMesh();
 
 	void CreateDefaultSamplers();
@@ -97,8 +98,10 @@ private:
 	Renderer  m_Renderer;
 
 	Pipeline m_Pipeline;
+	ComputePipeline m_ComputePipeline;
 
 	std::shared_ptr<Shader> m_Shader;
+	std::shared_ptr<Shader> m_ComputeShader;
 
 	Mesh m_Mesh;
 

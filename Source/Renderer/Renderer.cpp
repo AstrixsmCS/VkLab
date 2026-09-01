@@ -69,7 +69,7 @@ void Renderer::EndFrame()
 		{
 			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
 			.semaphore = GetRenderFinishedSemaphore(m_CurrentImageIndex),
-			.stageMask = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT
+			.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT
 		},
 		{
 			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
