@@ -84,8 +84,9 @@ void VertexBuffer::Create(const void* data, uint64_t size, VertexBufferUsage usa
 
 	VK_CHECK(vmaCreateBuffer(Allocator::GetAllocator(), &bufferInfo, &allocationInfo, &m_Buffer, &m_Allocation, nullptr));
 
-	CommandPool& commandPool = RendererContext::Get().GetCommandPool();
-	VkCommandBuffer commandBuffer = commandPool.AllocateCommandBuffer(true, false);
+	CommandPool& commandPool = RendererContext::Get().GetImmediateCommandPool();
+	CommandBuffer commandBuffer = commandPool.AllocateCommandBuffer();
+	commandBuffer.Begin(true);
 
 	VkBufferCopy copyRegion
 	{
@@ -94,9 +95,10 @@ void VertexBuffer::Create(const void* data, uint64_t size, VertexBufferUsage usa
 		.size = size
 	};
 
-	vkCmdCopyBuffer(commandBuffer, stagingBuffer, m_Buffer, 1, &copyRegion);
+	vkCmdCopyBuffer(commandBuffer.GetHandle(), stagingBuffer, m_Buffer, 1, &copyRegion);
 
-	commandPool.FlushCommandBuffer(commandBuffer);
+	commandBuffer.Flush();
+	commandPool.Reset();
 
 	vmaDestroyBuffer(Allocator::GetAllocator(), stagingBuffer, stagingAllocation);
 }
@@ -205,8 +207,9 @@ void IndexBuffer::Create(const void* data, uint64_t size)
 
 	VK_CHECK(vmaCreateBuffer(Allocator::GetAllocator(), &bufferInfo, &allocationInfo, &m_Buffer, &m_Allocation, nullptr));
 
-	CommandPool& commandPool = RendererContext::Get().GetCommandPool();
-	VkCommandBuffer commandBuffer = commandPool.AllocateCommandBuffer(true, false);
+	CommandPool& commandPool = RendererContext::Get().GetImmediateCommandPool();
+	CommandBuffer commandBuffer = commandPool.AllocateCommandBuffer();
+	commandBuffer.Begin(true);
 
 	VkBufferCopy copyRegion
 	{
@@ -215,9 +218,10 @@ void IndexBuffer::Create(const void* data, uint64_t size)
 		.size = size
 	};
 
-	vkCmdCopyBuffer(commandBuffer, stagingBuffer, m_Buffer, 1, &copyRegion);
+	vkCmdCopyBuffer(commandBuffer.GetHandle(), stagingBuffer, m_Buffer, 1, &copyRegion);
 
-	commandPool.FlushCommandBuffer(commandBuffer);
+	commandBuffer.Flush();
+	commandPool.Reset();
 
 	vmaDestroyBuffer(Allocator::GetAllocator(), stagingBuffer, stagingAllocation);
 }

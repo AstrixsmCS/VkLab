@@ -47,7 +47,8 @@ void Application::Shutdown()
 
 	MaterialSystem::Shutdown();
 
-	m_CameraBuffer.Destroy();
+	for (UniformBuffer& cameraBuffer : m_CameraBuffers)
+		cameraBuffer.Destroy();
 
 	DestroyDepthImage();
 
@@ -125,7 +126,8 @@ bool Application::InitializeVulkan()
 	m_Camera.SetPerspective(glm::radians(60.0f), aspectRatio, 0.1f, 1000.0f);
 	m_Camera.SetPosition(glm::vec3(0.0f, 0.0f, 3.0f));
 
-	m_CameraBuffer.Create(sizeof(CameraData));
+	for (UniformBuffer& cameraBuffer : m_CameraBuffers)
+		cameraBuffer.Create(sizeof(CameraData));
 
 	if (!CreateShader())
 	{
@@ -337,6 +339,9 @@ void Application::Render()
 	if (!m_Renderer.BeginFrame())
 		return;
 
+	const uint32_t frameIndex = m_Renderer.GetCurrentFrameIndex();
+	UniformBuffer& cameraBuffer = m_CameraBuffers[frameIndex];
+
 	// Flush any material changes to the GPU buffer before drawing.
 	MaterialSystem::Update();
 
@@ -353,7 +358,7 @@ void Application::Render()
 		.ViewProjection = m_Camera.GetViewProjection(),
 		.CameraPosition = m_Camera.GetPosition(),
 	};
-	m_CameraBuffer.SetData(&cameraData, sizeof(CameraData));
+	cameraBuffer.SetData(&cameraData, sizeof(CameraData));
 
 	SetImageLayout(
 		cmd,
@@ -446,7 +451,8 @@ void Application::Render()
 				PushConstants pushConstants
 				{
 					.Model          = modelScale * node.WorldTransform,
-					.Camera         = m_CameraBuffer.GetDeviceAddress(),
+
+					.Camera         = cameraBuffer.GetDeviceAddress(),
 
 					.MaterialBuffer = MaterialSystem::GetBuffer().GetDeviceAddress(),
 					.MaterialIndex  = materialSlot,

@@ -164,7 +164,8 @@ void RendererContext::Initialize()
 	s_Instance->PickPhysicalDevice();
 	s_Instance->CreateLogicalDevice();
 
-	s_Instance->m_CommandPool = std::make_unique<CommandPool>();
+	s_Instance->m_ImmediateCommandPool = std::make_unique<CommandPool>();
+	s_Instance->m_ImmediateCommandPool->Create(s_Instance->m_GraphicsFamily);
 }
 
 void RendererContext::Shutdown()
@@ -176,7 +177,7 @@ void RendererContext::Shutdown()
 	{
 		vkDeviceWaitIdle(s_Instance->m_LogicalDevice);
 
-		s_Instance->m_CommandPool.reset();
+		s_Instance->m_ImmediateCommandPool.reset();
 
 		vkDestroyDevice(s_Instance->m_LogicalDevice, nullptr);
 

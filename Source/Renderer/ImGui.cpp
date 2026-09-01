@@ -122,5 +122,5 @@ void ImGuiLayer::End(CommandBuffer& commandBuffer)
 {
 	ImGui::Render();
 
-	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer.GetActiveCommandBuffer());
+	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer.GetHandle());
 }

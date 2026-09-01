@@ -108,8 +108,8 @@ private:
 
 	ImGuiLayer m_ImGui;
 
-	Camera        m_Camera;
-	UniformBuffer m_CameraBuffer;
+	Camera m_Camera;
+	std::array<UniformBuffer, Renderer::GetFramesInFlight()> m_CameraBuffers;
 
 	Image m_DepthImage;
 

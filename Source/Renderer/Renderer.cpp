@@ -9,8 +9,8 @@ void Renderer::Initialize(SDL_Window* windowHandle)
 	m_SwapChain = std::make_unique<SwapChain>(windowHandle);
 	m_SwapChain->Initialize();
 
+	m_FrameData.Initialize();
 	CreateSyncObjects();
-	m_FrameCommandBuffer.Create(MAX_FRAMES_IN_FLIGHT, false, "Frame Command Buffer");
 }
 
 void Renderer::Shutdown()
@@ -20,31 +20,40 @@ void Renderer::Shutdown()
 	DestroySyncObjects();
 
 	m_FrameTimeline.Shutdown();
+	m_FrameData.Shutdown();
+
 	m_SwapChain.reset();
-	m_FrameCommandBuffer.Destroy();
+
 	RendererContext::Shutdown();
 }
 
 bool Renderer::BeginFrame()
 {
-	const uint64_t waitValue = m_FrameSignalValues[s_CurrentFrameIndex];
+	const uint32_t frameIndex = GetCurrentFrameIndex();
+	const uint64_t waitValue = m_FrameSignalValues[frameIndex];
 
 	if (waitValue != 0)
 		m_FrameTimeline.Wait(waitValue);
+
+	FrameContext& frame = GetCurrentFrame();
+
+	frame.Reset();
 
 	m_CurrentImageIndex = m_SwapChain->AcquireNextImage(GetImageAvailableSemaphore());
 
 	if (m_CurrentImageIndex == UINT32_MAX)
 		return false;
 
-	m_FrameCommandBuffer.Begin();
+	frame.GraphicsCommandBuffer.Begin();
 
 	return true;
 }
 
 void Renderer::EndFrame()
 {
-	m_FrameCommandBuffer.End();
+	FrameContext& frame = GetCurrentFrame();
+
+	frame.GraphicsCommandBuffer.End();
 
 	const uint64_t signalValue = m_NextSignalValue++;
 
@@ -52,7 +61,7 @@ void Renderer::EndFrame()
 	{
 		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
 		.semaphore = GetImageAvailableSemaphore(),
-		.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+		.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT
 	};
 
 	const VkSemaphoreSubmitInfo signalInfos[]
@@ -60,20 +69,20 @@ void Renderer::EndFrame()
 		{
 			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
 			.semaphore = GetRenderFinishedSemaphore(m_CurrentImageIndex),
-			.stageMask = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT,
+			.stageMask = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT
 		},
 		{
 			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
 			.semaphore = m_FrameTimeline.GetHandle(),
 			.value = signalValue,
-			.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-		},
+			.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT
+		}
 	};
 
 	const VkCommandBufferSubmitInfo commandBufferInfo
 	{
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
-		.commandBuffer = m_FrameCommandBuffer.GetCommandBuffer(s_CurrentFrameIndex),
+		.commandBuffer = frame.GraphicsCommandBuffer.GetHandle()
 	};
 
 	const VkSubmitInfo2 submitInfo
@@ -84,16 +93,16 @@ void Renderer::EndFrame()
 		.commandBufferInfoCount = 1,
 		.pCommandBufferInfos = &commandBufferInfo,
 		.signalSemaphoreInfoCount = 2,
-		.pSignalSemaphoreInfos = signalInfos,
+		.pSignalSemaphoreInfos = signalInfos
 	};
 
 	VK_CHECK(vkQueueSubmit2(RendererContext::Get().GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE));
 
-	m_FrameSignalValues[s_CurrentFrameIndex] = signalValue;
+	m_FrameSignalValues[GetCurrentFrameIndex()] = signalValue;
 
 	m_SwapChain->Present(GetRenderFinishedSemaphore(m_CurrentImageIndex));
 
-	s_CurrentFrameIndex = (s_CurrentFrameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
+	m_FrameData.Advance();
 }
 
 void Renderer::CreateSyncObjects()
@@ -126,6 +135,7 @@ void Renderer::DestroySyncObjects()
 
 	for (VkSemaphore semaphore : m_ImageAvailableSemaphores)
 		vkDestroySemaphore(device, semaphore, nullptr);
+
 	for (VkSemaphore semaphore : m_RenderFinishedSemaphores)
 		vkDestroySemaphore(device, semaphore, nullptr);
 

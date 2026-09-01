@@ -213,10 +213,7 @@ void Image::Destroy()
 
 	if (m_Info.ImageHandle != VK_NULL_HANDLE)
 	{
-		vmaDestroyImage(
-			Allocator::GetAllocator(),
-			m_Info.ImageHandle,
-			m_Info.Allocation);
+		vmaDestroyImage(Allocator::GetAllocator(), m_Info.ImageHandle, m_Info.Allocation);
 
 		m_Info.ImageHandle = VK_NULL_HANDLE;
 		m_Info.Allocation = VK_NULL_HANDLE;
@@ -241,13 +238,7 @@ void Image::Resize(uint32_t width, uint32_t height)
 	Create(specification);
 }
 
-VkImageView Image::CreateImageView(
-	ImageViewType type,
-	uint32_t baseMip,
-	uint32_t mipCount,
-	uint32_t baseLayer,
-	uint32_t layerCount,
-	VkImageAspectFlags aspectMask) const
+VkImageView Image::CreateImageView(ImageViewType type, uint32_t baseMip, uint32_t mipCount, uint32_t baseLayer, uint32_t layerCount, VkImageAspectFlags aspectMask) const
 {
 	assert(m_Info.ImageHandle != VK_NULL_HANDLE);
 
@@ -284,11 +275,7 @@ VkImageView Image::CreateImageView(
 
 	VkImageView imageView = VK_NULL_HANDLE;
 
-	VK_CHECK(vkCreateImageView(
-		RendererContext::Get().GetDevice(),
-		&viewInfo,
-		nullptr,
-		&imageView));
+	VK_CHECK(vkCreateImageView(RendererContext::Get().GetDevice(), &viewInfo, nullptr, &imageView));
 
 	return imageView;
 }

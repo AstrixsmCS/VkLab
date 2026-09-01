@@ -238,8 +238,9 @@ void Texture::SetData(const void* data, size_t size)
 
 	vmaUnmapMemory(Allocator::GetAllocator(), stagingAllocation);
 
-	CommandPool& commandPool = RendererContext::Get().GetCommandPool();
-	VkCommandBuffer commandBuffer = commandPool.AllocateCommandBuffer(true, false);
+	CommandPool& commandPool = RendererContext::Get().GetImmediateCommandPool();
+	CommandBuffer commandBuffer = commandPool.AllocateCommandBuffer();
+	commandBuffer.Begin(true);
 
 	const uint32_t layerCount = m_Image.GetType() == TextureType::Cube ? m_Image.GetLayerCount() : 1;
 
@@ -253,7 +254,7 @@ void Texture::SetData(const void* data, size_t size)
 	};
 
 	SetImageLayout(
-		commandBuffer,
+		commandBuffer.GetHandle(),
 		m_Image.GetHandle(),
 		VK_IMAGE_LAYOUT_UNDEFINED,
 		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -290,7 +291,7 @@ void Texture::SetData(const void* data, size_t size)
 	};
 
 	vkCmdCopyBufferToImage(
-		commandBuffer,
+		commandBuffer.GetHandle(),
 		stagingBuffer,
 		m_Image.GetHandle(),
 		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -301,7 +302,7 @@ void Texture::SetData(const void* data, size_t size)
 	if (m_Image.GetMipCount() > 1)
 	{
 		SetImageLayout(
-			commandBuffer,
+			commandBuffer.GetHandle(),
 			m_Image.GetHandle(),
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
@@ -311,7 +312,7 @@ void Texture::SetData(const void* data, size_t size)
 	else
 	{
 		SetImageLayout(
-			commandBuffer,
+			commandBuffer.GetHandle(),
 			m_Image.GetHandle(),
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
@@ -319,7 +320,9 @@ void Texture::SetData(const void* data, size_t size)
 		);
 	}
 
-	commandPool.FlushCommandBuffer(commandBuffer);
+	commandBuffer.Flush();
+	commandPool.Reset();
+
 	vmaDestroyBuffer(Allocator::GetAllocator(), stagingBuffer, stagingAllocation);
 
 	if (m_Image.GetMipCount() > 1)
@@ -335,8 +338,9 @@ void Texture::GenerateMips()
 
 	assert(mipCount > 1);
 
-	CommandPool& commandPool = RendererContext::Get().GetCommandPool();
-	VkCommandBuffer commandBuffer = commandPool.AllocateCommandBuffer(true, false);
+	CommandPool& commandPool = RendererContext::Get().GetImmediateCommandPool();
+	CommandBuffer commandBuffer = commandPool.AllocateCommandBuffer();
+	commandBuffer.Begin(true);
 
 	int32_t mipWidth = static_cast<int32_t>(m_Image.GetWidth());
 	int32_t mipHeight = static_cast<int32_t>(m_Image.GetHeight());
@@ -354,7 +358,7 @@ void Texture::GenerateMips()
 		};
 
 		SetImageLayout(
-			commandBuffer,
+			commandBuffer.GetHandle(),
 			m_Image.GetHandle(),
 			VK_IMAGE_LAYOUT_UNDEFINED,
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -414,7 +418,7 @@ void Texture::GenerateMips()
 			};
 
 			vkCmdBlitImage(
-				commandBuffer,
+				commandBuffer.GetHandle(),
 				m_Image.GetHandle(),
 				VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 				m_Image.GetHandle(),
@@ -426,7 +430,7 @@ void Texture::GenerateMips()
 		}
 
 		SetImageLayout(
-			commandBuffer,
+			commandBuffer.GetHandle(),
 			m_Image.GetHandle(),
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
@@ -448,14 +452,15 @@ void Texture::GenerateMips()
 	};
 
 	SetImageLayout(
-		commandBuffer,
+		commandBuffer.GetHandle(),
 		m_Image.GetHandle(),
 		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 		allMips
 	);
 
-	commandPool.FlushCommandBuffer(commandBuffer);
+	commandBuffer.Flush();
+	commandPool.Reset();
 }
 
 void Texture::Destroy()
