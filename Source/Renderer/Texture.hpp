@@ -14,6 +14,7 @@ struct TextureSpecification
 
 	ImageType Type = ImageType::Image2D;
 	Format Format = Format::RGBA8_UNorm;
+	ImageUsage Usage = ImageUsage::Sampled;
 
 	uint32_t Width = 1;
 	uint32_t Height = 1;
@@ -31,6 +32,7 @@ public:
 	Texture(const Texture&) = delete;
 	Texture& operator=(const Texture&) = delete;
 
+	void Create(const TextureSpecification& specification);
 	void Create(const TextureSpecification& specification, const void* data);
 	void Create(const TextureSpecification& specification, const std::filesystem::path& path);
 

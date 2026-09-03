@@ -50,7 +50,7 @@ void Application::Shutdown()
 		m_EquirectangularToCubemapMaterial.GetShader()->Shutdown();
 	}
 
-	m_EnvironmentImage.Destroy();
+	m_EnvironmentTexture.Destroy();
 
 	m_GeometryPipeline.Shutdown();
 
@@ -224,7 +224,7 @@ bool Application::CreateGeometryPass()
 
 bool Application::CreateSkyboxPass()
 {
-	constexpr uint32_t cubemapSize = 512;
+	constexpr uint32_t cubemapSize = 2048;
 	const std::filesystem::path hdriPath = "Resources/EnvironmentMaps/GraaffReinetGrooteKerk.hdr";
 
 	if (!std::filesystem::exists(hdriPath))
@@ -239,19 +239,17 @@ bool Application::CreateSkyboxPass()
 
 	equirectangularTexture.Create(textureSpecification, hdriPath);
 
-	ImageSpecification environmentSpecification
-	{
-		.DebugName = "Environment Cubemap",
-		.Type = ImageType::Cube,
-		.Format = Format::RGBA32_Float,
-		.Usage = ImageUsage::Sampled | ImageUsage::Storage,
-		.Width = cubemapSize,
-		.Height = cubemapSize,
-		.Depth = 1,
-		.Mips = 1
-	};
+	TextureSpecification environmentSpecification;
+	environmentSpecification.DebugName = "Environment Cubemap";
+	environmentSpecification.Type = ImageType::Cube;
+	environmentSpecification.Format = Format::RGBA32_Float;
+	environmentSpecification.Usage = ImageUsage::Sampled | ImageUsage::Storage;
+	environmentSpecification.Width = cubemapSize;
+	environmentSpecification.Height = cubemapSize;
+	environmentSpecification.Depth = 1;
+	environmentSpecification.GenerateMips = true;
 
-	m_EnvironmentImage.Create(environmentSpecification);
+	m_EnvironmentTexture.Create(environmentSpecification);
 
 	auto computeShader = std::make_shared<Shader>();
 	computeShader->Load("Resources/Shaders/EquirectangularToCubeMap.slang");
@@ -278,12 +276,12 @@ bool Application::CreateSkyboxPass()
 		.baseMipLevel = 0,
 		.levelCount = 1,
 		.baseArrayLayer = 0,
-		.layerCount = m_EnvironmentImage.GetLayerCount()
+		.layerCount = m_EnvironmentTexture.GetImage().GetLayerCount()
 	};
 
 	InsertImageMemoryBarrier(
 		commandBuffer.GetHandle(),
-		m_EnvironmentImage.GetHandle(),
+		m_EnvironmentTexture.GetImage().GetHandle(),
 		VK_ACCESS_2_NONE,
 		VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
 		VK_IMAGE_LAYOUT_UNDEFINED,
@@ -299,7 +297,7 @@ bool Application::CreateSkyboxPass()
 	vkCmdBindDescriptorSets(commandBuffer.GetHandle(), VK_PIPELINE_BIND_POINT_COMPUTE, m_EquirectangularToCubemapPipeline.GetLayout(), 0, 1, &descriptorSet, 0, nullptr);
 
 	m_EquirectangularToCubemapMaterial.Set("EquirectangularTexture", equirectangularTexture.GetTextureIndex());
-	m_EquirectangularToCubemapMaterial.Set("OutputCubemap", m_EnvironmentImage.GetStorageIndex());
+	m_EquirectangularToCubemapMaterial.Set("OutputCubemap", m_EnvironmentTexture.GetImage().GetStorageIndex());
 	m_EquirectangularToCubemapMaterial.Set("CubemapSize", cubemapSize);
 
 	const auto& computeRanges = m_EquirectangularToCubemapMaterial.GetShader()->GetPushConstantRanges();
@@ -314,18 +312,20 @@ bool Application::CreateSkyboxPass()
 
 	InsertImageMemoryBarrier(
 		commandBuffer.GetHandle(),
-		m_EnvironmentImage.GetHandle(),
+		m_EnvironmentTexture.GetImage().GetHandle(),
 		VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
-		VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+		VK_ACCESS_2_TRANSFER_READ_BIT,
 		VK_IMAGE_LAYOUT_GENERAL,
-		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 		VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-		VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+		VK_PIPELINE_STAGE_2_TRANSFER_BIT,
 		cubemapRange
 	);
 
 	commandBuffer.Flush();
 	commandPool.Reset();
+
+	m_EnvironmentTexture.GenerateMips();
 
 	equirectangularTexture.Destroy();
 
@@ -360,8 +360,8 @@ void Application::RenderSkyboxPass(VkCommandBuffer cmd, const UniformBuffer& cam
 	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_SkyboxPipeline.GetLayout(), 0, 1, &descriptorSet, 0, nullptr);
 
 	m_SkyboxMaterial.Set("UBCamera", cameraBuffer.GetDeviceAddress());
-	m_SkyboxMaterial.Set("EnvironmentTexture", m_EnvironmentImage.GetSampledIndex());
-	m_SkyboxMaterial.Set("TextureLod", 0.0f);
+	m_SkyboxMaterial.Set("EnvironmentTexture", m_EnvironmentTexture.GetTextureIndex());
+	m_SkyboxMaterial.Set("TextureLod", static_cast<float>(m_SkyboxLod));
 	m_SkyboxMaterial.Set("Intensity", 1.0f);
 
 	const auto& ranges = m_SkyboxMaterial.GetShader()->GetPushConstantRanges();
@@ -790,6 +790,9 @@ void Application::Render()
 	ImGui::DragFloat3("Direction", &m_DirectionalLight.Direction.x, 0.01f, -1.0f, 1.0f);
 	ImGui::ColorEdit3("Color", &m_DirectionalLight.Color.x);
 	ImGui::DragFloat("Intensity", &m_DirectionalLight.Intensity, 0.1f, 0.0f, 20.0f);
+
+	ImGui::SeparatorText("Skybox");
+	ImGui::SliderInt("LOD", &m_SkyboxLod, 0, static_cast<int>(m_EnvironmentTexture.GetMipCount() - 1));
 
 	ImGui::SeparatorText("Tone Mapping");
 	const char* toneMapperNames[]

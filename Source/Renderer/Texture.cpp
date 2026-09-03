@@ -67,9 +67,8 @@ namespace
 	}
 }
 
-void Texture::Create(const TextureSpecification& specification, const void* data)
+void Texture::Create(const TextureSpecification& specification)
 {
-	assert(data);
 	assert(specification.Width > 0);
 	assert(specification.Height > 0);
 	assert(specification.Depth > 0);
@@ -96,7 +95,7 @@ void Texture::Create(const TextureSpecification& specification, const void* data
 		.DebugName = m_Specification.DebugName,
 		.Type = m_Specification.Type,
 		.Format = m_Specification.Format,
-		.Usage = ImageUsage::Sampled | ImageUsage::TransferSrc | ImageUsage::TransferDst,
+		.Usage = m_Specification.Usage | ImageUsage::TransferSrc | ImageUsage::TransferDst,
 		.Width = m_Specification.Width,
 		.Height = m_Specification.Height,
 		.Depth = m_Specification.Depth,
@@ -104,6 +103,13 @@ void Texture::Create(const TextureSpecification& specification, const void* data
 	};
 
 	m_Image.Create(imageSpecification);
+}
+
+void Texture::Create(const TextureSpecification& specification, const void* data)
+{
+	assert(data);
+
+	Create(specification);
 
 	const uint32_t layerCount = m_Specification.Type == ImageType::Cube ? 6 : 1;
 

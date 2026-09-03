@@ -100,6 +100,8 @@ private:
 	float m_Exposure = 1.0f;
 	float m_WhitePoint = 4.0f;
 
+	int m_SkyboxLod = 0.0f;
+
 	Renderer  m_Renderer;
 
 	Pipeline m_GeometryPipeline;
@@ -112,7 +114,7 @@ private:
 	Material m_EquirectangularToCubemapMaterial;
 	Material m_ToneMappingMaterial;
 
-	Image m_EnvironmentImage;
+	Texture m_EnvironmentTexture;
 
 	Mesh m_Mesh;
 
