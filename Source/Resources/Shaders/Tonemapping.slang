@@ -1,3 +1,5 @@
+import Common;
+
 [[vk::binding(0, 0)]]
 Texture2D<float4> g_SampledImages[];
 
@@ -108,20 +110,6 @@ float3 ExtendedReinhardLuminance(float3 color, float whitePoint)
 	return color * (newLuminance / oldLuminance);
 }
 
-float3 ApplySRGB(float3 color)
-{
-	color = max(color, 0.0);
-
-	const float3 low = color * 12.92;
-	const float3 high = 1.055 * pow(color, 1.0 / 2.4) - 0.055;
-
-	return float3(
-		color.r <= 0.0031308 ? low.r : high.r,
-		color.g <= 0.0031308 ? low.g : high.g,
-		color.b <= 0.0031308 ? low.b : high.b
-	);
-}
-
 [shader("vertex")]
 VertexOutput main(uint vertexID : SV_VertexID)
 {
@@ -175,7 +163,8 @@ float4 main(VertexOutput input) : SV_Target0
 		}
 	}
 
-	color = ApplySRGB(color);
+	color = max(color, 0.0f);
+	color = ConvertSRGBFromLinear(color);
 
 	return float4(color, 1.0);
 }

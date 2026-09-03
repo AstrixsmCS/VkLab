@@ -1,4 +1,4 @@
-static const float PI = 3.14159265359;
+import Common;
 
 // Schlick Fresnel
 float3 FresnelSchlick(float3 F0, float F90, float cosTheta)
