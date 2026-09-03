@@ -101,6 +101,8 @@ public:
 	void Initialize(SDL_Window* windowHandle);
 	void Shutdown();
 
+	static void WaitForGPU();
+
 	bool BeginFrame();
 	void EndFrame();
 

@@ -72,38 +72,50 @@ void Texture::Create(const TextureSpecification& specification, const void* data
 	assert(data);
 	assert(specification.Width > 0);
 	assert(specification.Height > 0);
-	assert(specification.Depth == 1);
+	assert(specification.Depth > 0);
+
+	if (specification.Type == ImageType::Image2D)
+	{
+		assert(specification.Depth == 1);
+	}
+
+	if (specification.Type == ImageType::Cube)
+	{
+		assert(specification.Width == specification.Height);
+		assert(specification.Depth == 1);
+	}
 
 	Destroy();
 
 	m_Specification = specification;
 
-	const uint32_t mipCount = m_Specification.GenerateMips ? CalculateMipCount(m_Specification.Width, m_Specification.Height) : 1;
+	const uint32_t mipCount = m_Specification.GenerateMips ? CalculateMipCount(m_Specification.Width, m_Specification.Height, m_Specification.Depth) : 1;
 
 	ImageSpecification imageSpecification
 	{
 		.DebugName = m_Specification.DebugName,
-		.Type = TextureType::Texture2D,
+		.Type = m_Specification.Type,
 		.Format = m_Specification.Format,
-		.Usage = ImageUsage::Sampled,
+		.Usage = ImageUsage::Sampled | ImageUsage::TransferSrc | ImageUsage::TransferDst,
 		.Width = m_Specification.Width,
 		.Height = m_Specification.Height,
-		.Depth = 1,
-		.Mips = mipCount,
-		.Layers = 1,
-		.Transfer = true
+		.Depth = m_Specification.Depth,
+		.Mips = mipCount
 	};
 
 	m_Image.Create(imageSpecification);
 
-	const size_t dataSize = GetMemorySize(m_Specification.Format, m_Specification.Width, m_Specification.Height);
-	SetData(data, dataSize);
+	const uint32_t layerCount = m_Specification.Type == ImageType::Cube ? 6 : 1;
 
-	m_TextureIndex = Descriptor::RegisterTexture(m_Image.GetView());
+	const size_t dataSize = GetMemorySize(m_Specification.Format, m_Specification.Width, m_Specification.Height, m_Specification.Depth, layerCount);
+
+	SetData(data, dataSize);
 }
 
 void Texture::Create(const TextureSpecification& specification, const std::filesystem::path& path)
 {
+	assert(specification.Type == ImageType::Image2D && "File texture loading currently only supports 2D textures!");
+
 	int width = 0;
 	int height = 0;
 	int channels = 0;
@@ -145,6 +157,7 @@ void Texture::Create(const TextureSpecification& specification, const std::files
 		textureSpecification.DebugName = path.filename().string();
 	}
 
+	textureSpecification.Type = ImageType::Image2D;
 	textureSpecification.Width = static_cast<uint32_t>(width);
 	textureSpecification.Height = static_cast<uint32_t>(height);
 	textureSpecification.Depth = 1;
@@ -152,77 +165,6 @@ void Texture::Create(const TextureSpecification& specification, const std::files
 	Create(textureSpecification, pixels);
 
 	stbi_image_free(pixels);
-}
-
-void Texture::CreateCube(const TextureSpecification& specification, const void* data)
-{
-	assert(data);
-	assert(specification.Width > 0);
-	assert(specification.Height > 0);
-	assert(specification.Width == specification.Height);
-	assert(specification.Depth == 1);
-
-	Destroy();
-
-	m_Specification = specification;
-
-	const uint32_t mipCount = m_Specification.GenerateMips ? CalculateMipCount(m_Specification.Width, m_Specification.Height) : 1;
-
-	ImageSpecification imageSpecification
-	{
-		.DebugName = m_Specification.DebugName,
-		.Type = TextureType::Cube,
-		.Format = m_Specification.Format,
-		.Usage = ImageUsage::Sampled,
-		.Width = m_Specification.Width,
-		.Height = m_Specification.Height,
-		.Depth = 1,
-		.Mips = mipCount,
-		.Layers = 6,
-		.Transfer = true
-	};
-
-	m_Image.Create(imageSpecification);
-
-	const size_t dataSize = GetMemorySize(m_Specification.Format, m_Specification.Width, m_Specification.Height, 1, 6);
-	SetData(data, dataSize);
-
-	m_TextureIndex = Descriptor::RegisterTexture(m_Image.GetView());
-}
-
-void Texture::Create3D(const TextureSpecification& specification, const void* data)
-{
-	assert(data);
-	assert(specification.Width > 0);
-	assert(specification.Height > 0);
-	assert(specification.Depth > 0);
-
-	Destroy();
-
-	m_Specification = specification;
-
-	const uint32_t mipCount = m_Specification.GenerateMips ? CalculateMipCount(m_Specification.Width, m_Specification.Height, m_Specification.Depth) : 1;
-
-	ImageSpecification imageSpecification
-	{
-		.DebugName = m_Specification.DebugName,
-		.Type = TextureType::Texture3D,
-		.Format = m_Specification.Format,
-		.Usage = ImageUsage::Sampled,
-		.Width = m_Specification.Width,
-		.Height = m_Specification.Height,
-		.Depth = m_Specification.Depth,
-		.Mips = mipCount,
-		.Layers = 1,
-		.Transfer = true
-	};
-
-	m_Image.Create(imageSpecification);
-
-	const size_t dataSize = GetMemorySize(m_Specification.Format, m_Specification.Width, m_Specification.Height, m_Specification.Depth);
-	SetData(data, dataSize);
-
-	m_TextureIndex = Descriptor::RegisterTexture(m_Image.GetView());
 }
 
 void Texture::SetData(const void* data, size_t size)
@@ -262,7 +204,7 @@ void Texture::SetData(const void* data, size_t size)
 	CommandBuffer commandBuffer = commandPool.AllocateCommandBuffer();
 	commandBuffer.Begin(true);
 
-	const uint32_t layerCount = m_Image.GetType() == TextureType::Cube ? m_Image.GetLayerCount() : 1;
+	const uint32_t layerCount = m_Image.GetType() == ImageType::Cube ? m_Image.GetLayerCount() : 1;
 
 	VkImageSubresourceRange mipZeroRange
 	{
@@ -354,7 +296,7 @@ void Texture::SetData(const void* data, size_t size)
 void Texture::GenerateMips()
 {
 	const uint32_t mipCount = m_Image.GetMipCount();
-	const uint32_t layerCount = m_Image.GetType() == TextureType::Cube ? m_Image.GetLayerCount() : 1;
+	const uint32_t layerCount = m_Image.GetType() == ImageType::Cube ? m_Image.GetLayerCount() : 1;
 
 	assert(mipCount > 1);
 
@@ -389,7 +331,69 @@ void Texture::GenerateMips()
 		const int32_t nextHeight = std::max(mipHeight / 2, 1);
 		const int32_t nextDepth = std::max(mipDepth / 2, 1);
 
-		for (uint32_t layer = 0; layer < layerCount; ++layer)
+		if (m_Image.GetType() == ImageType::Cube)
+		{
+			for (uint32_t layer = 0; layer < layerCount; ++layer)
+			{
+				VkImageBlit blit{};
+
+				blit.srcOffsets[0] =
+				{
+					0,
+					0,
+					0
+				};
+
+				blit.srcOffsets[1] =
+				{
+					mipWidth,
+					mipHeight,
+					1
+				};
+
+				blit.srcSubresource =
+				{
+					.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+					.mipLevel = mip - 1,
+					.baseArrayLayer = layer,
+					.layerCount = 1
+				};
+
+				blit.dstOffsets[0] =
+				{
+					0,
+					0,
+					0
+				};
+
+				blit.dstOffsets[1] =
+				{
+					nextWidth,
+					nextHeight,
+					1
+				};
+
+				blit.dstSubresource =
+				{
+					.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+					.mipLevel = mip,
+					.baseArrayLayer = layer,
+					.layerCount = 1
+				};
+
+				vkCmdBlitImage(
+					commandBuffer.GetHandle(),
+					m_Image.GetHandle(),
+					VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+					m_Image.GetHandle(),
+					VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+					1,
+					&blit,
+					VK_FILTER_LINEAR
+				);
+			}
+		}
+		else
 		{
 			VkImageBlit blit{};
 
@@ -411,7 +415,7 @@ void Texture::GenerateMips()
 			{
 				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
 				.mipLevel = mip - 1,
-				.baseArrayLayer = layer,
+				.baseArrayLayer = 0,
 				.layerCount = 1
 			};
 
@@ -433,7 +437,7 @@ void Texture::GenerateMips()
 			{
 				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
 				.mipLevel = mip,
-				.baseArrayLayer = layer,
+				.baseArrayLayer = 0,
 				.layerCount = 1
 			};
 
@@ -485,9 +489,5 @@ void Texture::GenerateMips()
 
 void Texture::Destroy()
 {
-	Descriptor::UnregisterTexture(m_TextureIndex);
-
-	m_TextureIndex = Descriptor::INVALID_INDEX;
-
 	m_Image.Destroy();
 }

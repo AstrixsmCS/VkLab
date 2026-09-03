@@ -1,10 +1,12 @@
 #include "Material.hpp"
 
+#include <algorithm>
 #include <cstring>
 
 void Material::SetShader(std::shared_ptr<Shader> shader)
 {
 	m_Shader = std::move(shader);
+	InitializeStorage();
 	MarkDirty();
 }
 
@@ -75,6 +77,89 @@ void Material::UpdateGPUData()
 Material::Material(std::shared_ptr<Shader> shader)
 	: m_Shader(std::move(shader))
 {
+	InitializeStorage();
+}
+
+void Material::InitializeStorage()
+{
+	m_UniformStorage.clear();
+
+	if (!m_Shader)
+		return;
+
+	const auto& ranges = m_Shader->GetPushConstantRanges();
+
+	if (ranges.empty())
+		return;
+
+	uint32_t storageSize = 0;
+
+	for (const auto& range : ranges)
+		storageSize = std::max(storageSize, range.Offset + range.Size);
+
+	if (storageSize == 0)
+		return;
+
+	m_UniformStorage.resize(storageSize);
+	std::memset(m_UniformStorage.data(), 0, m_UniformStorage.size());
+}
+
+bool Material::SetUniformData(const std::string& name, const void* data, uint32_t size)
+{
+	if (!m_Shader)
+		return false;
+
+	if (m_UniformStorage.empty())
+		InitializeStorage();
+
+	if (m_UniformStorage.empty())
+		return false;
+
+	const auto& members = m_Shader->GetPushConstantMembers();
+
+	for (const auto& member : members)
+	{
+		if (member.Name != name)
+			continue;
+
+		if (member.Size != size)
+			return false;
+
+		if (member.Offset + size > m_UniformStorage.size())
+			return false;
+
+		std::memcpy(m_UniformStorage.data() + member.Offset, data, size);
+
+		return true;
+	}
+
+	return false;
+}
+
+bool Material::GetUniformData(const std::string& name, void* outData, uint32_t size) const
+{
+	if (!m_Shader || m_UniformStorage.empty())
+		return false;
+
+	const auto& members = m_Shader->GetPushConstantMembers();
+
+	for (const auto& member : members)
+	{
+		if (member.Name != name)
+			continue;
+
+		if (member.Size != size)
+			return false;
+
+		if (member.Offset + size > m_UniformStorage.size())
+			return false;
+
+		std::memcpy(outData, m_UniformStorage.data() + member.Offset, size);
+
+		return true;
+	}
+
+	return false;
 }
 
 const char* Material::ToString(MapType type)

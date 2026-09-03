@@ -11,12 +11,21 @@
 #include <string>
 #include <vector>
 
+enum class ImageType : uint8_t
+{
+	Image2D,
+	Image3D,
+	Cube
+};
+
 enum class ImageUsage : uint32_t
 {
-	None       = 0,
-	Attachment = 1 << 0,
-	Sampled    = 1 << 1,
-	Storage    = 1 << 2
+	None        = 0,
+	Attachment  = 1 << 0,
+	Sampled     = 1 << 1,
+	Storage     = 1 << 2,
+	TransferSrc = 1 << 3,
+	TransferDst = 1 << 4
 };
 
 constexpr ImageUsage operator|(ImageUsage lhs, ImageUsage rhs)
@@ -33,7 +42,7 @@ struct ImageSpecification
 {
 	std::string DebugName;
 
-	TextureType Type = TextureType::Texture2D;
+	ImageType Type = ImageType::Image2D;
 
 	Format Format = Format::RGBA8_UNorm;
 	ImageUsage Usage = ImageUsage::Sampled;
@@ -43,29 +52,15 @@ struct ImageSpecification
 	uint32_t Depth = 1;
 
 	uint32_t Mips = 1;
-	uint32_t Layers = 1;
-
-	bool Transfer = false;
 };
 
 struct ImageInfo
 {
 	VkImage ImageHandle = VK_NULL_HANDLE;
 	VkImageView ImageViewHandle = VK_NULL_HANDLE;
+
 	VmaAllocation Allocation = VK_NULL_HANDLE;
 };
-
-enum class ImageViewType : uint8_t
-{
-	Auto = 0,
-	Image2D,
-	Image2DArray,
-	Image3D,
-	Cube,
-	CubeArray
-};
-
-struct ImageViewSpecification;
 
 class Image
 {
@@ -86,31 +81,42 @@ public:
 	bool IsValid() const { return m_Info.ImageHandle != VK_NULL_HANDLE; }
 
 	VkImage GetHandle() const { return m_Info.ImageHandle; }
-
 	VkImageView GetView() const { return m_Info.ImageViewHandle; }
 
 	VkImageView GetLayerImageView(uint32_t layer) const;
 	VkImageView GetMipImageView(uint32_t mip);
 
+	uint32_t GetSampledIndex() const { return m_SampledIndex; }
+	uint32_t GetStorageIndex() const { return m_StorageIndex; }
+
 	const ImageInfo& GetImageInfo() const { return m_Info; }
 
 	uint32_t GetWidth() const { return m_Specification.Width; }
 	uint32_t GetHeight() const { return m_Specification.Height; }
-
 	uint32_t GetDepth() const { return m_Specification.Depth; }
 
 	uint32_t GetMipCount() const { return m_Specification.Mips; }
-	uint32_t GetLayerCount() const { return m_Specification.Layers; }
+	uint32_t GetLayerCount() const { return m_Specification.Type == ImageType::Cube ? 6 : 1; }
 
 	Format GetFormat() const { return m_Specification.Format; }
-	TextureType GetType() const { return m_Specification.Type; }
+	ImageType GetType() const { return m_Specification.Type; }
 
 	const ImageSpecification& GetSpecification() const { return m_Specification; }
+
 private:
-	VkImageView CreateImageView(ImageViewType type, uint32_t baseMip, uint32_t mipCount, uint32_t baseLayer, uint32_t layerCount, VkImageAspectFlags aspectMask = 0) const;
+	friend class ImageView;
+
+	VkImageView CreateImageView(uint32_t baseMip, uint32_t mipCount, uint32_t baseLayer, uint32_t layerCount) const;
+	VkImageView CreateStorageImageView() const;
+
 private:
 	ImageSpecification m_Specification;
 	ImageInfo m_Info;
+
+	VkImageView m_StorageImageView = VK_NULL_HANDLE;
+
+	uint32_t m_SampledIndex = Descriptor::INVALID_INDEX;
+	uint32_t m_StorageIndex = Descriptor::INVALID_INDEX;
 
 	std::vector<VkImageView> m_PerLayerImageViews;
 	std::map<uint32_t, VkImageView> m_PerMipImageViews;
@@ -122,15 +128,7 @@ struct ImageViewSpecification
 
 	Image* Image = nullptr;
 
-	ImageViewType Type = ImageViewType::Auto;
-
-	uint32_t BaseMip = 0;
-	uint32_t MipCount = 0;
-
-	uint32_t BaseLayer = 0;
-	uint32_t LayerCount = 0;
-
-	VkImageAspectFlags AspectMask = 0;
+	uint32_t Mip = 0;
 };
 
 class ImageView
@@ -145,16 +143,16 @@ public:
 	void Create(const ImageViewSpecification& specification);
 	void Destroy();
 
-	bool IsValid() const { return m_Info.ImageViewHandle != VK_NULL_HANDLE; }
+	bool IsValid() const { return m_ImageView != VK_NULL_HANDLE; }
 
-	VkImageView GetHandle() const { return m_Info.ImageViewHandle; }
-
-	const ImageInfo& GetImageInfo() const { return m_Info; }
+	VkImageView GetHandle() const { return m_ImageView; }
 
 	const ImageViewSpecification& GetSpecification() const { return m_Specification; }
+
 private:
 	ImageViewSpecification m_Specification;
-	ImageInfo m_Info;
+
+	VkImageView m_ImageView = VK_NULL_HANDLE;
 };
 
 struct SamplerSpecification

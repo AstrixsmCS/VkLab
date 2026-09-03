@@ -6,6 +6,14 @@
 #include <filesystem>
 #include <vector>
 
+struct PushConstantMember
+{
+	std::string Name;
+
+	uint32_t Offset = 0;
+	uint32_t Size = 0;
+};
+
 struct PushConstantRange
 {
 	VkShaderStageFlags StageFlags = 0;
@@ -26,6 +34,7 @@ struct DescriptorBinding
 struct ShaderReflectionData
 {
 	std::vector<PushConstantRange> PushConstantRanges;
+	std::vector<PushConstantMember> PushConstantMembers;
 	std::vector<DescriptorBinding> DescriptorBindings;
 
 	bool HasPushConstants()  const { return !PushConstantRanges.empty(); }
@@ -50,6 +59,7 @@ public:
 	// Reflection
 	const ShaderReflectionData&           GetReflectionData()     const { return m_ReflectionData; }
 	const std::vector<PushConstantRange>& GetPushConstantRanges() const { return m_ReflectionData.PushConstantRanges; }
+	const std::vector<PushConstantMember>& GetPushConstantMembers() const { return m_ReflectionData.PushConstantMembers; }
 	const std::vector<DescriptorBinding>& GetDescriptorBindings() const { return m_ReflectionData.DescriptorBindings; }
 private:
 	void CreateShaderModule();

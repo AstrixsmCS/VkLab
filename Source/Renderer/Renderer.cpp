@@ -15,7 +15,7 @@ void Renderer::Initialize(SDL_Window* windowHandle)
 
 void Renderer::Shutdown()
 {
-	vkDeviceWaitIdle(RendererContext::Get().GetDevice());
+	WaitForGPU();
 
 	DestroySyncObjects();
 
@@ -25,6 +25,11 @@ void Renderer::Shutdown()
 	m_SwapChain.reset();
 
 	RendererContext::Shutdown();
+}
+
+void Renderer::WaitForGPU()
+{
+	vkDeviceWaitIdle(RendererContext::Get().GetDevice());
 }
 
 bool Renderer::BeginFrame()

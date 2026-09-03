@@ -533,6 +533,7 @@ void RendererContext::CreateLogicalDevice()
 
 	vkGetPhysicalDeviceFeatures2(m_PhysicalDevice, &supportedFeatures);
 
+	assert(supportedFeatures11.shaderDrawParameters && "Shader draw parameters are not supported!");
 	assert(supportedFeatures13.dynamicRendering && "Dynamic rendering is not supported!");
 	assert(supportedFeatures13.synchronization2 && "Synchronization2 is not supported!");
 
@@ -582,7 +583,8 @@ void RendererContext::CreateLogicalDevice()
 	VkPhysicalDeviceVulkan11Features features11
 	{
 		.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
-		.pNext = &features12
+		.pNext = &features12,
+		.shaderDrawParameters = VK_TRUE
 	};
 
 	VkPhysicalDeviceFeatures2 features

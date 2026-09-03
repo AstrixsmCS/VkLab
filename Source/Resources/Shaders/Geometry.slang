@@ -1,9 +1,12 @@
 import BRDF;
 
-struct CameraData
+struct UBCameraData
 {
 	float4x4 ViewProjection;
-	float3   CameraPosition;
+	float4x4 InverseViewProjection;
+
+	float3 CameraPosition;
+	float _Pad0;
 };
 
 struct GPUMaterialData
@@ -46,8 +49,10 @@ static const uint ANISOTROPIC_REPEAT_SAMPLER = 3;
 cbuffer PushConstants
 {
 	float4x4 Model;
-	CameraData* Camera;
-	GPUMaterialData* Materials;
+
+	UBCameraData* UBCamera;
+
+	GPUMaterialData* SBMaterials;
 	uint             MaterialIndex;
 
 	uint             _Pad0;
@@ -57,17 +62,6 @@ cbuffer PushConstants
 	float4 LightDirection;
 	float4 LightColorIntensity;
 };
-
-float3 ACESFilm(float3 x)
-{
-	const float a = 2.51;
-	const float b = 0.03;
-	const float c = 2.43;
-	const float d = 0.59;
-	const float e = 0.14;
-
-	return saturate((x * (a * x + b)) / (x * (c * x + d) + e));
-}
 
 [shader("vertex")]
 VertexOutput main(VertexInput input)
@@ -79,7 +73,7 @@ VertexOutput main(VertexInput input)
 	const float3 T = normalize(mul(model3x3, input.Tangent.xyz));
 
 	VertexOutput output;
-	output.Position = mul(Camera->ViewProjection, worldPosition);
+	output.Position = mul(UBCamera->ViewProjection, worldPosition);
 	output.WorldPos = worldPosition.xyz;
 	output.Normal   = N;
 	output.TexCoord = input.TexCoord;
@@ -91,7 +85,7 @@ VertexOutput main(VertexInput input)
 [shader("fragment")]
 float4 main(VertexOutput input) : SV_Target
 {
-	const GPUMaterialData mat = Materials[MaterialIndex];
+	const GPUMaterialData mat = SBMaterials[MaterialIndex];
 	const float2 uv = input.TexCoord;
 
 	// Albedo
@@ -141,7 +135,7 @@ float4 main(VertexOutput input) : SV_Target
 
 	// Directional light
 	const float3 L = normalize(-LightDirection.xyz);
-	const float3 V = normalize(Camera->CameraPosition - input.WorldPos);
+	const float3 V = normalize(UBCamera->CameraPosition - input.WorldPos);
 	const float3 H = normalize(L + V);
 
 	const float3 lightColor = LightColorIntensity.rgb;
@@ -188,10 +182,5 @@ float4 main(VertexOutput input) : SV_Target
 
 	const float3 lighting = ambient + directLighting;
 
-	// Temporary ACES tone mapping until this moves into a post-process pass.
-	const float3 toneMapped = ACESFilm(lighting);
-	// SDR gamma encoding
-	const float3 finalColor = pow(toneMapped, 1.0 / 2.2);
-
-	return float4(finalColor, albedo.a);
+	return float4(lighting, albedo.a);
 }

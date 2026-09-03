@@ -12,11 +12,12 @@ struct TextureSpecification
 {
 	std::string DebugName;
 
+	ImageType Type = ImageType::Image2D;
+	Format Format = Format::RGBA8_UNorm;
+
 	uint32_t Width = 1;
 	uint32_t Height = 1;
 	uint32_t Depth = 1;
-
-	Format Format = Format::RGBA8_UNorm;
 
 	bool GenerateMips = true;
 };
@@ -32,9 +33,6 @@ public:
 
 	void Create(const TextureSpecification& specification, const void* data);
 	void Create(const TextureSpecification& specification, const std::filesystem::path& path);
-
-	void CreateCube(const TextureSpecification& specification, const void* data);
-	void Create3D(const TextureSpecification& specification, const void* data);
 
 	void GenerateMips();
 
@@ -54,16 +52,17 @@ public:
 	uint32_t GetMipCount() const { return m_Image.GetMipCount(); }
 
 	Format GetFormat() const { return m_Image.GetFormat(); }
+	ImageType GetType() const { return m_Image.GetType(); }
 
-	uint32_t GetTextureIndex() const { return m_TextureIndex; }
+	uint32_t GetTextureIndex() const { return m_Image.GetSampledIndex(); }
 
 	const TextureSpecification& GetSpecification() const { return m_Specification; }
+
 private:
 	void SetData(const void* data, size_t size);
+
 private:
 	TextureSpecification m_Specification;
 
 	Image m_Image;
-
-	uint32_t m_TextureIndex = Descriptor::INVALID_INDEX;
 };

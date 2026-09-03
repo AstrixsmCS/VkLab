@@ -61,6 +61,26 @@ public:
 	void SetShader(std::shared_ptr<Shader> shader);
 	const std::shared_ptr<Shader>& GetShader() const { return m_Shader; }
 
+	// Generic uniform access
+	template<typename T>
+	void Set(const std::string& name, const T& value)
+	{
+		SetUniformData(name, &value, sizeof(T));
+	}
+
+	template<typename T>
+	T Get(const std::string& name, T defaultValue = T()) const
+	{
+		T value;
+
+		if (GetUniformData(name, &value, sizeof(T)))
+			return value;
+
+		return defaultValue;
+	}
+
+	const std::vector<uint8_t>& GetUniformStorage() const { return m_UniformStorage; }
+
 	// Map management
 	void AddTexture(const MapInfo& texture)
 	{
@@ -204,7 +224,13 @@ public:
 
 	static const char* ToString(MapType type);
 private:
+	bool SetUniformData(const std::string& name, const void* data, uint32_t size);
+	bool GetUniformData(const std::string& name, void* outData, uint32_t size) const;
+	void InitializeStorage();
+private:
 	std::shared_ptr<Shader> m_Shader;
+
+	std::vector<uint8_t> m_UniformStorage;
 
 	std::vector<MapInfo> m_Maps;
 

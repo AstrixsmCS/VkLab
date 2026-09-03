@@ -51,6 +51,40 @@ namespace
 		return aspectMask;
 	}
 
+	VkImageType GetImageType(ImageType type)
+	{
+		switch (type)
+		{
+			case ImageType::Image2D:
+			case ImageType::Cube:
+				return VK_IMAGE_TYPE_2D;
+
+			case ImageType::Image3D:
+				return VK_IMAGE_TYPE_3D;
+		}
+
+		assert(false && "Invalid image type!");
+		return VK_IMAGE_TYPE_2D;
+	}
+
+	VkImageViewType GetImageViewType(ImageType type)
+	{
+		switch (type)
+		{
+			case ImageType::Image2D:
+				return VK_IMAGE_VIEW_TYPE_2D;
+
+			case ImageType::Image3D:
+				return VK_IMAGE_VIEW_TYPE_3D;
+
+			case ImageType::Cube:
+				return VK_IMAGE_VIEW_TYPE_CUBE;
+		}
+
+		assert(false && "Invalid image type!");
+		return VK_IMAGE_VIEW_TYPE_2D;
+	}
+
 	VkImageUsageFlags GetUsageFlags(const ImageSpecification& specification)
 	{
 		VkImageUsageFlags usage = 0;
@@ -73,41 +107,13 @@ namespace
 			}
 		}
 
-		if (specification.Transfer)
-		{
+		if ((specification.Usage & ImageUsage::TransferSrc) != ImageUsage::None)
 			usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+
+		if ((specification.Usage & ImageUsage::TransferDst) != ImageUsage::None)
 			usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-		}
 
 		return usage;
-	}
-
-	VkImageViewType GetImageViewType(ImageViewType type, const ImageSpecification& specification, uint32_t layerCount)
-	{
-		if (type != ImageViewType::Auto)
-		{
-			switch (type)
-			{
-				case ImageViewType::Image2D: return VK_IMAGE_VIEW_TYPE_2D;
-				case ImageViewType::Image2DArray: return VK_IMAGE_VIEW_TYPE_2D_ARRAY;
-				case ImageViewType::Image3D: return VK_IMAGE_VIEW_TYPE_3D;
-				case ImageViewType::Cube: return VK_IMAGE_VIEW_TYPE_CUBE;
-				case ImageViewType::CubeArray: return VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
-
-				default:
-					break;
-			}
-		}
-
-		switch (specification.Type)
-		{
-			case TextureType::Texture2D: return layerCount > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
-			case TextureType::Texture3D: return VK_IMAGE_VIEW_TYPE_3D;
-			case TextureType::Cube: return layerCount > 6 ? VK_IMAGE_VIEW_TYPE_CUBE_ARRAY : VK_IMAGE_VIEW_TYPE_CUBE;
-		}
-
-		assert(false && "Invalid image type!");
-		return VK_IMAGE_VIEW_TYPE_2D;
 	}
 }
 
@@ -117,32 +123,31 @@ void Image::Create(const ImageSpecification& specification)
 	assert(specification.Height > 0);
 	assert(specification.Depth > 0);
 	assert(specification.Mips > 0);
-	assert(specification.Layers > 0);
 
-	if (specification.Type == TextureType::Texture3D)
+	if (specification.Type == ImageType::Image2D)
 	{
-		assert(specification.Layers == 1 && "3D images cannot have array layers!");
+		assert(specification.Depth == 1 && "2D images must have a depth of 1!");
 	}
 
-	if (specification.Type == TextureType::Cube)
+	if (specification.Type == ImageType::Cube)
 	{
 		assert(specification.Width == specification.Height && "Cube images must be square!");
 		assert(specification.Depth == 1 && "Cube images must have a depth of 1!");
-		assert(specification.Layers >= 6 && specification.Layers % 6 == 0 && "Cube images require layers in multiples of 6!");
 	}
 
 	Destroy();
 
 	m_Specification = specification;
 
-	const VkFormat format = ToVulkan(m_Specification.Format);
+	const VkDevice device = RendererContext::Get().GetDevice();
+	const uint32_t layerCount = GetLayerCount();
 
 	VkImageCreateInfo imageInfo
 	{
 		.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-		.flags = m_Specification.Type == TextureType::Cube ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : static_cast<VkImageCreateFlags>(0),
-		.imageType = ToVulkan(m_Specification.Type),
-		.format = format,
+		.flags = m_Specification.Type == ImageType::Cube ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : static_cast<VkImageCreateFlags>(0),
+		.imageType = GetImageType(m_Specification.Type),
+		.format = ToVulkan(m_Specification.Format),
 
 		.extent =
 		{
@@ -152,7 +157,7 @@ void Image::Create(const ImageSpecification& specification)
 		},
 
 		.mipLevels = m_Specification.Mips,
-		.arrayLayers = m_Specification.Type == TextureType::Texture3D ? 1 : m_Specification.Layers,
+		.arrayLayers = layerCount,
 		.samples = VK_SAMPLE_COUNT_1_BIT,
 		.tiling = VK_IMAGE_TILING_OPTIMAL,
 		.usage = GetUsageFlags(m_Specification),
@@ -169,20 +174,49 @@ void Image::Create(const ImageSpecification& specification)
 
 	if (!m_Specification.DebugName.empty())
 	{
-		SetDebugUtilsObjectName(RendererContext::Get().GetDevice(), VK_OBJECT_TYPE_IMAGE, m_Specification.DebugName, m_Info.ImageHandle);
+		SetDebugUtilsObjectName(device, VK_OBJECT_TYPE_IMAGE, m_Specification.DebugName, m_Info.ImageHandle);
 	}
 
-	m_Info.ImageViewHandle = CreateImageView(ImageViewType::Auto, 0, m_Specification.Mips, 0, m_Specification.Layers);
+	m_Info.ImageViewHandle = CreateImageView(0, m_Specification.Mips, 0, layerCount);
 
 	if (!m_Specification.DebugName.empty())
 	{
-		SetDebugUtilsObjectName(RendererContext::Get().GetDevice(), VK_OBJECT_TYPE_IMAGE_VIEW, m_Specification.DebugName + " View", m_Info.ImageViewHandle);
+		SetDebugUtilsObjectName(device, VK_OBJECT_TYPE_IMAGE_VIEW, m_Specification.DebugName + " View", m_Info.ImageViewHandle);
+	}
+
+	if ((m_Specification.Usage & ImageUsage::Sampled) != ImageUsage::None)
+	{
+		m_SampledIndex = Descriptor::RegisterTexture(m_Info.ImageViewHandle);
+	}
+
+	if ((m_Specification.Usage & ImageUsage::Storage) != ImageUsage::None)
+	{
+		m_StorageImageView = CreateStorageImageView();
+
+		if (!m_Specification.DebugName.empty())
+		{
+			SetDebugUtilsObjectName(device, VK_OBJECT_TYPE_IMAGE_VIEW, m_Specification.DebugName + " Storage View", m_StorageImageView);
+		}
+
+		m_StorageIndex = Descriptor::RegisterStorageImage(m_StorageImageView);
 	}
 }
 
 void Image::Destroy()
 {
 	const VkDevice device = RendererContext::Get().GetDevice();
+
+	if (m_SampledIndex != Descriptor::INVALID_INDEX)
+	{
+		Descriptor::UnregisterTexture(m_SampledIndex);
+		m_SampledIndex = Descriptor::INVALID_INDEX;
+	}
+
+	if (m_StorageIndex != Descriptor::INVALID_INDEX)
+	{
+		Descriptor::UnregisterStorageImage(m_StorageIndex);
+		m_StorageIndex = Descriptor::INVALID_INDEX;
+	}
 
 	for (VkImageView imageView : m_PerLayerImageViews)
 	{
@@ -204,10 +238,15 @@ void Image::Destroy()
 
 	m_PerMipImageViews.clear();
 
+	if (m_StorageImageView != VK_NULL_HANDLE)
+	{
+		vkDestroyImageView(device, m_StorageImageView, nullptr);
+		m_StorageImageView = VK_NULL_HANDLE;
+	}
+
 	if (m_Info.ImageViewHandle != VK_NULL_HANDLE)
 	{
 		vkDestroyImageView(device, m_Info.ImageViewHandle, nullptr);
-
 		m_Info.ImageViewHandle = VK_NULL_HANDLE;
 	}
 
@@ -238,38 +277,75 @@ void Image::Resize(uint32_t width, uint32_t height)
 	Create(specification);
 }
 
-VkImageView Image::CreateImageView(ImageViewType type, uint32_t baseMip, uint32_t mipCount, uint32_t baseLayer, uint32_t layerCount, VkImageAspectFlags aspectMask) const
+VkImageView Image::CreateImageView(uint32_t baseMip, uint32_t mipCount, uint32_t baseLayer, uint32_t layerCount) const
 {
 	assert(m_Info.ImageHandle != VK_NULL_HANDLE);
 
 	assert(baseMip < m_Specification.Mips);
-	assert(baseLayer < m_Specification.Layers);
+	assert(baseLayer < GetLayerCount());
 
-	const uint32_t resolvedMipCount = mipCount == 0 ? m_Specification.Mips - baseMip : mipCount;
-	const uint32_t resolvedLayerCount = layerCount == 0 ? m_Specification.Layers - baseLayer : layerCount;
+	assert(baseMip + mipCount <= m_Specification.Mips);
+	assert(baseLayer + layerCount <= GetLayerCount());
 
-	assert(baseMip + resolvedMipCount <= m_Specification.Mips);
-	assert(baseLayer + resolvedLayerCount <= m_Specification.Layers);
-
-	if (aspectMask == 0)
+	VkImageViewCreateInfo viewInfo
 	{
-		aspectMask = GetAspectMask(m_Specification.Format);
+		.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+		.image = m_Info.ImageHandle,
+		.viewType = GetImageViewType(m_Specification.Type),
+		.format = ToVulkan(m_Specification.Format),
+
+		.subresourceRange =
+		{
+			.aspectMask = GetAspectMask(m_Specification.Format),
+			.baseMipLevel = baseMip,
+			.levelCount = mipCount,
+			.baseArrayLayer = baseLayer,
+			.layerCount = layerCount
+		}
+	};
+
+	VkImageView imageView = VK_NULL_HANDLE;
+
+	VK_CHECK(vkCreateImageView(RendererContext::Get().GetDevice(), &viewInfo, nullptr, &imageView));
+
+	return imageView;
+}
+
+VkImageView Image::CreateStorageImageView() const
+{
+	assert(m_Info.ImageHandle != VK_NULL_HANDLE);
+
+	VkImageViewType viewType = VK_IMAGE_VIEW_TYPE_2D;
+
+	switch (m_Specification.Type)
+	{
+		case ImageType::Image2D:
+			viewType = VK_IMAGE_VIEW_TYPE_2D;
+			break;
+
+		case ImageType::Image3D:
+			viewType = VK_IMAGE_VIEW_TYPE_3D;
+			break;
+
+		case ImageType::Cube:
+			viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+			break;
 	}
 
 	VkImageViewCreateInfo viewInfo
 	{
 		.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
 		.image = m_Info.ImageHandle,
-		.viewType = GetImageViewType(type, m_Specification, resolvedLayerCount),
+		.viewType = viewType,
 		.format = ToVulkan(m_Specification.Format),
 
 		.subresourceRange =
 		{
-			.aspectMask = aspectMask,
-			.baseMipLevel = baseMip,
-			.levelCount = resolvedMipCount,
-			.baseArrayLayer = baseLayer,
-			.layerCount = resolvedLayerCount
+			.aspectMask = GetAspectMask(m_Specification.Format),
+			.baseMipLevel = 0,
+			.levelCount = m_Specification.Mips,
+			.baseArrayLayer = 0,
+			.layerCount = GetLayerCount()
 		}
 	};
 
@@ -282,22 +358,47 @@ VkImageView Image::CreateImageView(ImageViewType type, uint32_t baseMip, uint32_
 
 void Image::CreatePerLayerImageViews()
 {
-	assert(m_Specification.Layers > 1);
+	const uint32_t layerCount = GetLayerCount();
+
+	assert(layerCount > 1);
 
 	if (!m_PerLayerImageViews.empty())
 		return;
 
-	m_PerLayerImageViews.resize(m_Specification.Layers, VK_NULL_HANDLE);
+	m_PerLayerImageViews.resize(layerCount, VK_NULL_HANDLE);
 
-	for (uint32_t layer = 0; layer < m_Specification.Layers; layer++)
+	const VkDevice device = RendererContext::Get().GetDevice();
+
+	for (uint32_t layer = 0; layer < layerCount; layer++)
 	{
-		m_PerLayerImageViews[layer] = CreateImageView(ImageViewType::Image2D, 0, m_Specification.Mips, layer, 1);
+		VkImageViewCreateInfo viewInfo
+		{
+			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+			.image = m_Info.ImageHandle,
+			.viewType = VK_IMAGE_VIEW_TYPE_2D,
+			.format = ToVulkan(m_Specification.Format),
+
+			.subresourceRange =
+			{
+				.aspectMask = GetAspectMask(m_Specification.Format),
+				.baseMipLevel = 0,
+				.levelCount = m_Specification.Mips,
+				.baseArrayLayer = layer,
+				.layerCount = 1
+			}
+		};
+
+		VK_CHECK(vkCreateImageView(device, &viewInfo, nullptr, &m_PerLayerImageViews[layer]));
+
+		if (!m_Specification.DebugName.empty())
+		{
+			SetDebugUtilsObjectName(device, VK_OBJECT_TYPE_IMAGE_VIEW, m_Specification.DebugName + " Layer " + std::to_string(layer), m_PerLayerImageViews[layer]);
+		}
 	}
 }
 
 VkImageView Image::GetLayerImageView(uint32_t layer) const
 {
-	assert(layer < m_Specification.Layers);
 	assert(layer < m_PerLayerImageViews.size());
 
 	return m_PerLayerImageViews[layer];
@@ -312,9 +413,14 @@ VkImageView Image::GetMipImageView(uint32_t mip)
 	if (it != m_PerMipImageViews.end())
 		return it->second;
 
-	const VkImageView imageView = CreateImageView(ImageViewType::Auto, mip, 1, 0, m_Specification.Layers);
+	VkImageView imageView = CreateImageView(mip, 1, 0, GetLayerCount());
 
 	m_PerMipImageViews[mip] = imageView;
+
+	if (!m_Specification.DebugName.empty())
+	{
+		SetDebugUtilsObjectName(RendererContext::Get().GetDevice(), VK_OBJECT_TYPE_IMAGE_VIEW, m_Specification.DebugName + " Mip " + std::to_string(mip), imageView);
+	}
 
 	return imageView;
 }
@@ -327,60 +433,24 @@ void ImageView::Create(const ImageViewSpecification& specification)
 	Destroy();
 
 	m_Specification = specification;
-	m_Info = m_Specification.Image->GetImageInfo();
 
-	const ImageSpecification& imageSpecification = m_Specification.Image->GetSpecification();
+	assert(m_Specification.Mip < m_Specification.Image->GetMipCount());
 
-	assert(m_Specification.BaseMip < imageSpecification.Mips);
-	assert(m_Specification.BaseLayer < imageSpecification.Layers);
-
-	const uint32_t mipCount = m_Specification.MipCount == 0 ? imageSpecification.Mips - m_Specification.BaseMip : m_Specification.MipCount;
-	const uint32_t layerCount = m_Specification.LayerCount == 0 ? imageSpecification.Layers - m_Specification.BaseLayer : m_Specification.LayerCount;
-
-	assert(m_Specification.BaseMip + mipCount <= imageSpecification.Mips);
-	assert(m_Specification.BaseLayer + layerCount <= imageSpecification.Layers);
-
-	const VkDevice device = RendererContext::Get().GetDevice();
-
-	const VkImageAspectFlags aspectMask = m_Specification.AspectMask != 0 ? m_Specification.AspectMask : GetAspectMask(imageSpecification.Format);
-
-	VkImageViewCreateInfo viewInfo
-	{
-		.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-		.image = m_Info.ImageHandle,
-		.viewType = GetImageViewType(m_Specification.Type, imageSpecification, layerCount),
-		.format = ToVulkan(imageSpecification.Format),
-
-		.subresourceRange =
-		{
-			.aspectMask = aspectMask,
-			.baseMipLevel = m_Specification.BaseMip,
-			.levelCount = mipCount,
-			.baseArrayLayer = m_Specification.BaseLayer,
-			.layerCount = layerCount
-		}
-	};
-
-	m_Info.ImageViewHandle = VK_NULL_HANDLE;
-
-	VK_CHECK(vkCreateImageView(device, &viewInfo, nullptr, &m_Info.ImageViewHandle));
+	m_ImageView = m_Specification.Image->CreateImageView(m_Specification.Mip, 1, 0, m_Specification.Image->GetLayerCount());
 
 	if (!m_Specification.DebugName.empty())
 	{
-		SetDebugUtilsObjectName(device, VK_OBJECT_TYPE_IMAGE_VIEW, m_Specification.DebugName, m_Info.ImageViewHandle);
+		SetDebugUtilsObjectName(RendererContext::Get().GetDevice(), VK_OBJECT_TYPE_IMAGE_VIEW, m_Specification.DebugName, m_ImageView);
 	}
 }
 
 void ImageView::Destroy()
 {
-	if (m_Info.ImageViewHandle != VK_NULL_HANDLE)
+	if (m_ImageView != VK_NULL_HANDLE)
 	{
-		vkDestroyImageView(RendererContext::Get().GetDevice(), m_Info.ImageViewHandle, nullptr);
-		m_Info.ImageViewHandle = VK_NULL_HANDLE;
+		vkDestroyImageView(RendererContext::Get().GetDevice(), m_ImageView, nullptr);
+		m_ImageView = VK_NULL_HANDLE;
 	}
-
-	m_Info.ImageHandle = VK_NULL_HANDLE;
-	m_Info.Allocation = VK_NULL_HANDLE;
 }
 
 void Sampler::Create(const SamplerSpecification& specification)

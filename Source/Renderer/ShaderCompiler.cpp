@@ -282,11 +282,33 @@ void ShaderCompiler::Reflect(slang::ProgramLayout* layout, ShaderReflectionData&
 
 			outReflection.PushConstantRanges.push_back(range);
 
-			std::println(
-				"[ShaderCompiler] Reflect - push constant: size={} stages={:#x}",
-				range.Size,
-				range.StageFlags
-			);
+			std::println("[ShaderCompiler] Reflect - push constant: size={} stages={:#x}", range.Size, range.StageFlags);
+
+			const SlangInt fieldCount = elementTypeLayout->getFieldCount();
+
+			for (SlangInt fieldIndex = 0; fieldIndex < fieldCount; fieldIndex++)
+			{
+				slang::VariableLayoutReflection* field = elementTypeLayout->getFieldByIndex(fieldIndex);
+
+				if (!field)
+					continue;
+
+				slang::TypeLayoutReflection* fieldTypeLayout = field->getTypeLayout();
+
+				if (!fieldTypeLayout)
+					continue;
+
+				PushConstantMember member
+				{
+					.Name = field->getName() ? field->getName() : "",
+					.Offset = static_cast<uint32_t>(field->getOffset()),
+					.Size = static_cast<uint32_t>(fieldTypeLayout->getSize())
+				};
+
+				outReflection.PushConstantMembers.push_back(member);
+
+				std::println("[ShaderCompiler] Reflect - push constant member: name='{}' offset={} size={}", member.Name, member.Offset, member.Size);
+			}
 
 			continue;
 		}

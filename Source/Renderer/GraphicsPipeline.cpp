@@ -38,7 +38,30 @@ static VkFormat ShaderDataTypeToVulkanFormat(ShaderDataType type)
 	return VK_FORMAT_UNDEFINED;
 }
 
-void Pipeline::Create(const PipelineSpecification &specification)
+static bool IsIntegerFormat(Format format)
+{
+	switch (format)
+	{
+		case Format::R8_UInt:
+		case Format::RG8_UInt:
+		case Format::RGBA8_UInt:
+
+		case Format::R16_UInt:
+		case Format::RG16_UInt:
+		case Format::RGBA16_UInt:
+
+		case Format::R32_UInt:
+		case Format::RG32_UInt:
+		case Format::RGB32_UInt:
+		case Format::RGBA32_UInt:
+			return true;
+
+		default:
+			return false;
+	}
+}
+
+void Pipeline::Create(const GraphicsPipelineSpecification &specification)
 {
 	m_Specification = specification;
 
@@ -144,16 +167,18 @@ void Pipeline::Create(const PipelineSpecification &specification)
 	// Rasterization
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+	const VkCullModeFlags cullMode = m_Specification.BackfaceCulling ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
+
 	VkPipelineRasterizationStateCreateInfo rasterizationInfo
 	{
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
 		.depthClampEnable = VK_FALSE,
 		.rasterizerDiscardEnable = VK_FALSE,
-		.polygonMode = ToVulkan(m_Specification.PolygonMode),
-		.cullMode = ToVulkan(m_Specification.CullMode),
-		.frontFace = ToVulkan(m_Specification.FrontFace),
+		.polygonMode = m_Specification.Wireframe ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL,
+		.cullMode = cullMode,
+		.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
 		.depthBiasEnable = VK_FALSE,
-		.lineWidth = 1.0f
+		.lineWidth = m_Specification.LineWidth
 	};
 
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -191,37 +216,82 @@ void Pipeline::Create(const PipelineSpecification &specification)
 	{
 		VkPipelineColorBlendAttachmentState& attachment = blendAttachments[i];
 
-		attachment.colorWriteMask =
-			VK_COLOR_COMPONENT_R_BIT |
-			VK_COLOR_COMPONENT_G_BIT |
-			VK_COLOR_COMPONENT_B_BIT |
-			VK_COLOR_COMPONENT_A_BIT;
+		attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 
-		const Format format = m_Specification.ColorFormats[i];
-
-		const bool integerFormat =
-			format == Format::R8_UInt ||
-			format == Format::RG8_UInt ||
-			format == Format::RGBA8_UInt ||
-			format == Format::R16_UInt ||
-			format == Format::RG16_UInt ||
-			format == Format::RGBA16_UInt ||
-			format == Format::R32_UInt ||
-			format == Format::RG32_UInt ||
-			format == Format::RGB32_UInt ||
-			format == Format::RGBA32_UInt;
-
-		attachment.blendEnable = (m_Specification.BlendEnabled && !integerFormat) ? VK_TRUE : VK_FALSE;
-
-		if (attachment.blendEnable)
+		// Vulkan doesn't support blending on integer attachments.
+		if (IsIntegerFormat(m_Specification.ColorFormats[i]))
 		{
-			attachment.srcColorBlendFactor = ToVulkan(m_Specification.SrcColorBlendFactor);
-			attachment.dstColorBlendFactor = ToVulkan(m_Specification.DstColorBlendFactor);
-			attachment.colorBlendOp = VK_BLEND_OP_ADD;
+			attachment.blendEnable = VK_FALSE;
+			continue;
+		}
 
-			attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-			attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-			attachment.alphaBlendOp = VK_BLEND_OP_ADD;
+		switch (m_Specification.BlendMode)
+		{
+			case BlendMode::None:
+			{
+				attachment.blendEnable = VK_FALSE;
+				break;
+			}
+
+			case BlendMode::Alpha:
+			{
+				attachment.blendEnable = VK_TRUE;
+
+				attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+				attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+				attachment.colorBlendOp = VK_BLEND_OP_ADD;
+
+				attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+				attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+				attachment.alphaBlendOp = VK_BLEND_OP_ADD;
+
+				break;
+			}
+
+			case BlendMode::PremultipliedAlpha:
+			{
+				attachment.blendEnable = VK_TRUE;
+
+				attachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+				attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+				attachment.colorBlendOp = VK_BLEND_OP_ADD;
+
+				attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+				attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+				attachment.alphaBlendOp = VK_BLEND_OP_ADD;
+
+				break;
+			}
+
+			case BlendMode::Additive:
+			{
+				attachment.blendEnable = VK_TRUE;
+
+				attachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+				attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+				attachment.colorBlendOp = VK_BLEND_OP_ADD;
+
+				attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+				attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+				attachment.alphaBlendOp = VK_BLEND_OP_ADD;
+
+				break;
+			}
+
+			case BlendMode::Multiply:
+			{
+				attachment.blendEnable = VK_TRUE;
+
+				attachment.srcColorBlendFactor = VK_BLEND_FACTOR_DST_COLOR;
+				attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
+				attachment.colorBlendOp = VK_BLEND_OP_ADD;
+
+				attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+				attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+				attachment.alphaBlendOp = VK_BLEND_OP_ADD;
+
+				break;
+			}
 		}
 	}
 

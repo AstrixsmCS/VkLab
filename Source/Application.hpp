@@ -24,10 +24,13 @@
 
 struct SDL_Window;
 
-struct CameraData
+struct UBCamera
 {
 	glm::mat4 ViewProjection{ 1.0f };
+	glm::mat4 InverseViewProjection{ 1.0f };
+
 	glm::vec3 CameraPosition{ 0.0f };
+	float _Pad0 = 0.0f;
 };
 
 enum class DefaultSampler
@@ -48,22 +51,11 @@ struct DirectionalLight
 	float Intensity = 3.0f;
 };
 
-struct PushConstants
+enum class ToneMapper : uint32_t
 {
-	glm::mat4       Model{ 1.0f };
-
-	VkDeviceAddress Camera = 0;
-
-	VkDeviceAddress MaterialBuffer = 0;
-	uint32_t        MaterialIndex  = 0;
-
-	uint32_t        _Pad0;
-	uint32_t        _Pad1;
-	uint32_t        _Pad2;
-
-	glm::vec4       LightDirection;
-	glm::vec4       LightColorIntensity;
-
+	Reinhard = 0,
+	ACES,
+	Uncharted2
 };
 
 class Application
@@ -76,8 +68,14 @@ private:
 	void ShowError(const std::string& errorMessage) const;
 
 	bool InitializeVulkan();
+
 	bool CreateGeometryPass();
-	bool CreateComputePass();
+	bool CreateSkyboxPass();
+	bool CreateToneMappingPass();
+	void RenderGeometryPass(VkCommandBuffer cmd, const UniformBuffer& cameraBuffer);
+	void RenderSkyboxPass(VkCommandBuffer cmd, const UniformBuffer& cameraBuffer);
+	void RenderToneMappingPass(VkCommandBuffer cmd, const VkExtent2D& extent);
+
 	bool LoadMesh();
 
 	void CreateDefaultSamplers();
@@ -88,6 +86,9 @@ private:
 	void CreateDepthImage();
 	void DestroyDepthImage();
 
+	void CreateSceneImage();
+	void DestroySceneImage();
+
 	void Render();
 private:
 	SDL_Window* m_Window  = nullptr;
@@ -95,13 +96,23 @@ private:
 	uint32_t    m_Height  = 720;
 	bool        m_Running = false;
 
+	ToneMapper m_ToneMapper = ToneMapper::ACES;
+	float m_Exposure = 1.0f;
+	float m_WhitePoint = 4.0f;
+
 	Renderer  m_Renderer;
 
-	Pipeline m_Pipeline;
-	ComputePipeline m_ComputePipeline;
+	Pipeline m_GeometryPipeline;
+	Pipeline m_SkyboxPipeline;
+	ComputePipeline m_EquirectangularToCubemapPipeline;
+	Pipeline m_ToneMappingPipeline;
 
-	std::shared_ptr<Shader> m_Shader;
-	std::shared_ptr<Shader> m_ComputeShader;
+	Material m_GeometryMaterial;
+	Material m_SkyboxMaterial;
+	Material m_EquirectangularToCubemapMaterial;
+	Material m_ToneMappingMaterial;
+
+	Image m_EnvironmentImage;
 
 	Mesh m_Mesh;
 
@@ -115,6 +126,7 @@ private:
 	std::array<UniformBuffer, Renderer::GetFramesInFlight()> m_CameraBuffers;
 
 	Image m_DepthImage;
+	Image m_SceneImage;
 
 	std::array<std::shared_ptr<Sampler>, static_cast<size_t>(DefaultSampler::Count)> m_DefaultSamplers;
 };

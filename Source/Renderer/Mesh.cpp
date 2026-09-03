@@ -310,7 +310,6 @@ bool Mesh::Load(const std::filesystem::path& path)
 				{
 					spec.Width  = static_cast<uint32_t>(width);
 					spec.Height = static_cast<uint32_t>(height);
-					spec.Depth  = 1;
 
 					texture->Create(spec, pixels);
 
@@ -346,7 +345,6 @@ bool Mesh::Load(const std::filesystem::path& path)
 						{
 							spec.Width  = static_cast<uint32_t>(width);
 							spec.Height = static_cast<uint32_t>(height);
-							spec.Depth  = 1;
 
 							texture->Create(spec, pixels);
 
