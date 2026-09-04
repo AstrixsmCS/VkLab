@@ -6,7 +6,6 @@
 
 #include <backends/imgui_impl_sdl3.h>
 
-#include <filesystem>
 
 void Application::ShowError(const std::string& errorMessage) const
 {
@@ -32,12 +31,17 @@ void Application::Shutdown()
 	Renderer::WaitForGPU();
 
 	m_ToneMappingPipeline.Shutdown();
+	m_BRDFLUTPipeline.Shutdown();
 	m_SkyboxPipeline.Shutdown();
-	m_EquirectangularToCubemapPipeline.Shutdown();
 
 	if (m_ToneMappingMaterial.GetShader())
 	{
 		m_ToneMappingMaterial.GetShader()->Shutdown();
+	}
+
+	if (m_BRDFLUTMaterial.GetShader())
+	{
+		m_BRDFLUTMaterial.GetShader()->Shutdown();
 	}
 
 	if (m_SkyboxMaterial.GetShader())
@@ -45,12 +49,19 @@ void Application::Shutdown()
 		m_SkyboxMaterial.GetShader()->Shutdown();
 	}
 
-	if (m_EquirectangularToCubemapMaterial.GetShader())
+	m_BRDFLUT.Destroy();
+
+	if (m_Environment.IrradianceMap)
 	{
-		m_EquirectangularToCubemapMaterial.GetShader()->Shutdown();
+		m_Environment.IrradianceMap->Destroy();
+		m_Environment.IrradianceMap.reset();
 	}
 
-	m_EnvironmentTexture.Destroy();
+	if (m_Environment.RadianceMap)
+	{
+		m_Environment.RadianceMap->Destroy();
+		m_Environment.RadianceMap.reset();
+	}
 
 	m_GeometryPipeline.Shutdown();
 
@@ -65,7 +76,9 @@ void Application::Shutdown()
 		MaterialSystem::UnregisterMaterial(index);
 	m_MaterialIndices.clear();
 
-	m_Mesh.Destroy();
+	for (Mesh& mesh : m_Meshs)
+		mesh.Destroy();
+	m_Meshs.clear();
 
 	MaterialSystem::Shutdown();
 
@@ -159,6 +172,23 @@ bool Application::InitializeVulkan()
 		return false;
 	}
 
+	auto [radianceMap, irradianceMap] = m_Renderer.CreateEnvironmentMap("Resources/EnvironmentMaps/Birchwood.hdr");
+
+	if (!radianceMap || !irradianceMap)
+	{
+		ShowError("Unable to initialize the environment.");
+		return false;
+	}
+
+	m_Environment.RadianceMap = std::move(radianceMap);
+	m_Environment.IrradianceMap = std::move(irradianceMap);
+
+	if (!CreateBRDFLUT())
+	{
+		ShowError("Unable to initialize the BRDF LUT.");
+		return false;
+	}
+
 	if (!CreateSkyboxPass())
 	{
 		ShowError("Unable to initialize the skybox pass.");
@@ -178,14 +208,16 @@ bool Application::InitializeVulkan()
 	}
 
 	// Register every mesh material with the material system.
-	const auto& materials = m_Mesh.GetMaterials();
-	m_MaterialIndices.reserve(materials.size());
-
-	for (const Material& material : materials)
+	for (const Mesh& mesh : m_Meshs)
 	{
-		auto mat = std::make_shared<Material>(material);
-		const uint32_t index = MaterialSystem::RegisterMaterial(mat);
-		m_MaterialIndices.push_back(index);
+		const auto& materials = mesh.GetMaterials();
+
+		for (const Material& material : materials)
+		{
+			auto mat = std::make_shared<Material>(material);
+			const uint32_t index = MaterialSystem::RegisterMaterial(mat);
+			m_MaterialIndices.push_back(index);
+		}
 	}
 
 	// Flush dirty materials to the GPU buffer before the first frame.
@@ -222,113 +254,100 @@ bool Application::CreateGeometryPass()
 	return m_GeometryPipeline.GetPipeline() != VK_NULL_HANDLE;
 }
 
-bool Application::CreateSkyboxPass()
+bool Application::CreateBRDFLUT()
 {
-	constexpr uint32_t cubemapSize = 2048;
-	const std::filesystem::path hdriPath = "Resources/EnvironmentMaps/GraaffReinetGrooteKerk.hdr";
+	constexpr uint32_t brdfLUTSize = 512;
+	constexpr uint32_t sampleCount = 512;
 
-	if (!std::filesystem::exists(hdriPath))
+	auto shader = std::make_shared<Shader>();
+	shader->Load("Resources/Shaders/BRDFLUT.slang");
+
+	if (!shader->IsValid())
 		return false;
 
-	Texture equirectangularTexture;
+	m_BRDFLUTMaterial.SetShader(shader);
 
-	TextureSpecification textureSpecification;
-	textureSpecification.DebugName = "Equirectangular HDRI";
-	textureSpecification.Format = Format::RGBA32_Float;
-	textureSpecification.GenerateMips = false;
-
-	equirectangularTexture.Create(textureSpecification, hdriPath);
-
-	TextureSpecification environmentSpecification;
-	environmentSpecification.DebugName = "Environment Cubemap";
-	environmentSpecification.Type = ImageType::Cube;
-	environmentSpecification.Format = Format::RGBA32_Float;
-	environmentSpecification.Usage = ImageUsage::Sampled | ImageUsage::Storage;
-	environmentSpecification.Width = cubemapSize;
-	environmentSpecification.Height = cubemapSize;
-	environmentSpecification.Depth = 1;
-	environmentSpecification.GenerateMips = true;
-
-	m_EnvironmentTexture.Create(environmentSpecification);
-
-	auto computeShader = std::make_shared<Shader>();
-	computeShader->Load("Resources/Shaders/EquirectangularToCubeMap.slang");
-
-	if (!computeShader->IsValid())
-		return false;
-
-	m_EquirectangularToCubemapMaterial.SetShader(computeShader);
-
-	ComputePipelineSpecification computeSpecification
+	m_BRDFLUTPipeline.Create(
 	{
-		.Shader = m_EquirectangularToCubemapMaterial.GetShader(),
-		.DebugName = "Equirectangular To Cubemap Pipeline"
-	};
-	m_EquirectangularToCubemapPipeline.Create(computeSpecification);
+		.Shader = m_BRDFLUTMaterial.GetShader(),
+		.DebugName = "BRDF LUT Pipeline"
+	});
+
+	TextureSpecification specification;
+	specification.DebugName = "BRDF LUT";
+	specification.Type = ImageType::Image2D;
+	specification.Format = Format::RGBA16_Float;
+	specification.Usage = ImageUsage::Sampled | ImageUsage::Storage;
+	specification.Width = brdfLUTSize;
+	specification.Height = brdfLUTSize;
+	specification.Depth = 1;
+	specification.GenerateMips = false;
+
+	m_BRDFLUT.Create(specification);
 
 	CommandPool& commandPool = RendererContext::Get().GetImmediateCommandPool();
 	CommandBuffer commandBuffer = commandPool.AllocateCommandBuffer();
 	commandBuffer.Begin(true);
 
-	const VkImageSubresourceRange cubemapRange
+	const VkImageSubresourceRange range
 	{
 		.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
 		.baseMipLevel = 0,
 		.levelCount = 1,
 		.baseArrayLayer = 0,
-		.layerCount = m_EnvironmentTexture.GetImage().GetLayerCount()
+		.layerCount = 1
 	};
 
 	InsertImageMemoryBarrier(
 		commandBuffer.GetHandle(),
-		m_EnvironmentTexture.GetImage().GetHandle(),
+		m_BRDFLUT.GetImage().GetHandle(),
 		VK_ACCESS_2_NONE,
 		VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
 		VK_IMAGE_LAYOUT_UNDEFINED,
 		VK_IMAGE_LAYOUT_GENERAL,
 		VK_PIPELINE_STAGE_2_NONE,
 		VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-		cubemapRange
+		range
 	);
 
-	m_EquirectangularToCubemapPipeline.Bind(commandBuffer.GetHandle());
+	m_BRDFLUTPipeline.Bind(commandBuffer.GetHandle());
 
 	const VkDescriptorSet descriptorSet = Descriptor::GetSet();
-	vkCmdBindDescriptorSets(commandBuffer.GetHandle(), VK_PIPELINE_BIND_POINT_COMPUTE, m_EquirectangularToCubemapPipeline.GetLayout(), 0, 1, &descriptorSet, 0, nullptr);
+	vkCmdBindDescriptorSets(commandBuffer.GetHandle(), VK_PIPELINE_BIND_POINT_COMPUTE, m_BRDFLUTPipeline.GetLayout(), 0, 1, &descriptorSet, 0, nullptr);
 
-	m_EquirectangularToCubemapMaterial.Set("EquirectangularTexture", equirectangularTexture.GetTextureIndex());
-	m_EquirectangularToCubemapMaterial.Set("OutputCubemap", m_EnvironmentTexture.GetImage().GetStorageIndex());
-	m_EquirectangularToCubemapMaterial.Set("CubemapSize", cubemapSize);
+	m_BRDFLUTMaterial.Set("OutputImage", m_BRDFLUT.GetImage().GetStorageIndex());
+	m_BRDFLUTMaterial.Set("OutputSize", brdfLUTSize);
+	m_BRDFLUTMaterial.Set("SampleCount", sampleCount);
 
-	const auto& computeRanges = m_EquirectangularToCubemapMaterial.GetShader()->GetPushConstantRanges();
-	assert(!computeRanges.empty());
+	const auto& ranges = m_BRDFLUTMaterial.GetShader()->GetPushConstantRanges();
+	assert(!ranges.empty());
 
-	const auto& computeStorage = m_EquirectangularToCubemapMaterial.GetUniformStorage();
-	assert(computeStorage.size() == computeRanges[0].Size);
+	const auto& storage = m_BRDFLUTMaterial.GetUniformStorage();
+	assert(storage.size() == ranges[0].Size);
 
-	vkCmdPushConstants(commandBuffer.GetHandle(), m_EquirectangularToCubemapPipeline.GetLayout(), computeRanges[0].StageFlags, computeRanges[0].Offset, static_cast<uint32_t>(computeStorage.size()), computeStorage.data());
-
-	vkCmdDispatch(commandBuffer.GetHandle(), (cubemapSize + 7) / 8, (cubemapSize + 7) / 8, 6);
+	vkCmdPushConstants(commandBuffer.GetHandle(), m_BRDFLUTPipeline.GetLayout(), ranges[0].StageFlags, ranges[0].Offset, static_cast<uint32_t>(storage.size()), storage.data());
+	vkCmdDispatch(commandBuffer.GetHandle(), (brdfLUTSize + 7) / 8, (brdfLUTSize + 7) / 8, 1);
 
 	InsertImageMemoryBarrier(
 		commandBuffer.GetHandle(),
-		m_EnvironmentTexture.GetImage().GetHandle(),
+		m_BRDFLUT.GetImage().GetHandle(),
 		VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
-		VK_ACCESS_2_TRANSFER_READ_BIT,
+		VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
 		VK_IMAGE_LAYOUT_GENERAL,
-		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 		VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-		VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-		cubemapRange
+		VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+		range
 	);
 
 	commandBuffer.Flush();
 	commandPool.Reset();
 
-	m_EnvironmentTexture.GenerateMips();
+	return true;
+}
 
-	equirectangularTexture.Destroy();
-
+bool Application::CreateSkyboxPass()
+{
 	auto shader = std::make_shared<Shader>();
 	shader->Load("Resources/Shaders/Skybox.slang");
 
@@ -360,7 +379,7 @@ void Application::RenderSkyboxPass(VkCommandBuffer cmd, const UniformBuffer& cam
 	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_SkyboxPipeline.GetLayout(), 0, 1, &descriptorSet, 0, nullptr);
 
 	m_SkyboxMaterial.Set("UBCamera", cameraBuffer.GetDeviceAddress());
-	m_SkyboxMaterial.Set("EnvironmentTexture", m_EnvironmentTexture.GetTextureIndex());
+	m_SkyboxMaterial.Set("EnvironmentTexture", m_Environment.RadianceMap->GetTextureIndex());
 	m_SkyboxMaterial.Set("TextureLod", static_cast<float>(m_SkyboxLod));
 	m_SkyboxMaterial.Set("Intensity", 1.0f);
 
@@ -388,48 +407,72 @@ void Application::RenderGeometryPass(VkCommandBuffer cmd, const UniformBuffer& c
 
 	const auto& range = ranges[0];
 
-	const VkBuffer vertexBuffer = m_Mesh.GetVertexBuffer();
-	const VkDeviceSize offset = 0;
+	uint32_t materialOffset = 0;
 
-	vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer, &offset);
-	vkCmdBindIndexBuffer(cmd, m_Mesh.GetIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
-
-	const auto& submeshes = m_Mesh.GetSubmeshes();
-	const glm::mat4 modelScale = glm::scale(glm::mat4(1.0f), glm::vec3(1.0f));
-
-	m_Mesh.TraverseNodes([&](const Node& node)
+	for (size_t meshIndex = 0; meshIndex < m_Meshs.size(); ++meshIndex)
 	{
-		for (uint32_t submeshIndex : node.Submeshes)
+		const Mesh& mesh = m_Meshs[meshIndex];
+
+		const VkBuffer vertexBuffer = mesh.GetVertexBuffer();
+		const VkDeviceSize offset = 0;
+
+		vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer, &offset);
+		vkCmdBindIndexBuffer(cmd, mesh.GetIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
+
+		const auto& submeshes = mesh.GetSubmeshes();
+
+		glm::mat4 modelTransform{ 1.0f };
+
+		if (meshIndex == 1)
 		{
-			assert(submeshIndex < submeshes.size());
-
-			const Submesh& submesh = submeshes[submeshIndex];
-
-			uint32_t materialSlot = 0;
-
-			if (submesh.MaterialIndex != UINT32_MAX && submesh.MaterialIndex < m_MaterialIndices.size())
-			{
-				materialSlot = m_MaterialIndices[submesh.MaterialIndex];
-			}
-
-			m_GeometryMaterial.Set("Model", modelScale * node.WorldTransform);
-
-			m_GeometryMaterial.Set("UBCamera", cameraBuffer.GetDeviceAddress());
-
-			m_GeometryMaterial.Set("SBMaterials", MaterialSystem::GetBuffer().GetDeviceAddress());
-			m_GeometryMaterial.Set("MaterialIndex", materialSlot);
-
-			m_GeometryMaterial.Set("LightDirection", glm::vec4(glm::normalize(m_DirectionalLight.Direction), 0.0f));
-			m_GeometryMaterial.Set("LightColorIntensity", glm::vec4(m_DirectionalLight.Color, m_DirectionalLight.Intensity));
-
-			const auto& storage = m_GeometryMaterial.GetUniformStorage();
-			assert(storage.size() == range.Size);
-
-			vkCmdPushConstants(cmd, m_GeometryPipeline.GetLayout(), range.StageFlags, range.Offset, static_cast<uint32_t>(storage.size()), storage.data());
-
-			vkCmdDrawIndexed(cmd, submesh.IndexCount, 1, submesh.BaseIndex, static_cast<int32_t>(submesh.BaseVertex), 0);
+			modelTransform = glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 1.5f, 0.0f)) * glm::scale(glm::mat4(1.0f), glm::vec3(0.5f));
 		}
-	});
+
+		if (meshIndex == 2)
+		{
+			modelTransform = glm::translate(glm::mat4(1.0f), glm::vec3(-6.0f, 0.0f, 0.0f)) * glm::scale(glm::mat4(1.0f), glm::vec3(1.0f));
+		}
+
+		mesh.TraverseNodes([&](const Node& node)
+		{
+			for (uint32_t submeshIndex : node.Submeshes)
+			{
+				assert(submeshIndex < submeshes.size());
+
+				const Submesh& submesh = submeshes[submeshIndex];
+
+				uint32_t materialSlot = 0;
+
+				if (submesh.MaterialIndex != UINT32_MAX && materialOffset + submesh.MaterialIndex < m_MaterialIndices.size())
+				{
+					materialSlot = m_MaterialIndices[materialOffset + submesh.MaterialIndex];
+				}
+
+				m_GeometryMaterial.Set("Model", modelTransform * node.WorldTransform);
+
+				m_GeometryMaterial.Set("UBCamera", cameraBuffer.GetDeviceAddress());
+
+				m_GeometryMaterial.Set("SBMaterials", MaterialSystem::GetBuffer().GetDeviceAddress());
+				m_GeometryMaterial.Set("MaterialIndex", materialSlot);
+
+				m_GeometryMaterial.Set("RadianceMap", m_Environment.RadianceMap->GetTextureIndex());
+				m_GeometryMaterial.Set("IrradianceMap", m_Environment.IrradianceMap->GetTextureIndex());
+				m_GeometryMaterial.Set("BRDFLUT", m_BRDFLUT.GetTextureIndex());
+
+				m_GeometryMaterial.Set("LightDirection", glm::vec4(glm::normalize(m_DirectionalLight.Direction), 0.0f));
+				m_GeometryMaterial.Set("LightColorIntensity", glm::vec4(m_DirectionalLight.Color, m_DirectionalLight.Intensity));
+
+				const auto& storage = m_GeometryMaterial.GetUniformStorage();
+				assert(storage.size() == range.Size);
+
+				vkCmdPushConstants(cmd, m_GeometryPipeline.GetLayout(), range.StageFlags, range.Offset, static_cast<uint32_t>(storage.size()), storage.data());
+
+				vkCmdDrawIndexed(cmd, submesh.IndexCount, 1, submesh.BaseIndex, static_cast<int32_t>(submesh.BaseVertex), 0);
+			}
+		});
+
+		materialOffset += static_cast<uint32_t>(mesh.GetMaterials().size());
+	}
 }
 
 bool Application::CreateToneMappingPass()
@@ -487,7 +530,19 @@ void Application::RenderToneMappingPass(VkCommandBuffer cmd, const VkExtent2D& e
 
 bool Application::LoadMesh()
 {
-	return m_Mesh.Load("Resources/Meshes/FlightHelmet/FlightHelmet.gltf");
+	m_Meshs.emplace_back();
+	if (!m_Meshs.back().Load("Resources/Meshes/FlightHelmet/FlightHelmet.gltf"))
+		return false;
+
+	m_Meshs.emplace_back();
+	if (!m_Meshs.back().Load("Resources/Meshes/DamagedHelmet/DamagedHelmet.glb"))
+		return false;
+
+	m_Meshs.emplace_back();
+	if (!m_Meshs.back().Load("Resources/Meshes/Sponza/Sponza.gltf"))
+		return false;
+
+	return true;
 }
 
 void Application::CreateDefaultSamplers()
@@ -792,14 +847,16 @@ void Application::Render()
 	ImGui::DragFloat("Intensity", &m_DirectionalLight.Intensity, 0.1f, 0.0f, 20.0f);
 
 	ImGui::SeparatorText("Skybox");
-	ImGui::SliderInt("LOD", &m_SkyboxLod, 0, static_cast<int>(m_EnvironmentTexture.GetMipCount() - 1));
+	ImGui::SliderFloat("LOD", &m_SkyboxLod, 0, m_Environment.RadianceMap->GetMipCount() - 1);
 
 	ImGui::SeparatorText("Tone Mapping");
 	const char* toneMapperNames[]
 	{
 		"Extended Reinhard",
-		"ACES",
-		"Uncharted 2"
+		"ACESFitted",
+		"Uncharted 2",
+		"AgX",
+		"PBR Neutral"
 	};
 	int toneMapper = static_cast<int>(m_ToneMapper);
 	if (ImGui::Combo("Tone Mapper", &toneMapper, toneMapperNames, static_cast<int>(std::size(toneMapperNames))))

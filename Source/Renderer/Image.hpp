@@ -129,6 +129,8 @@ struct ImageViewSpecification
 	Image* Image = nullptr;
 
 	uint32_t Mip = 0;
+
+	bool Storage = false;
 };
 
 class ImageView

@@ -1,4 +1,5 @@
 import Common;
+import EnvironmentMapping;
 import BRDF;
 
 struct UBCameraData
@@ -42,8 +43,10 @@ struct VertexOutput
 
 // Bindless arrays
 [[vk::binding(0, 0)]] Texture2D<float4> g_Textures[];
+[[vk::binding(0, 0)]] TextureCube<float4> g_CubeTextures[];
 [[vk::binding(1, 0)]] SamplerState      g_Samplers[];
 
+static const uint LINEAR_CLAMP_SAMPLER = 1;
 static const uint ANISOTROPIC_REPEAT_SAMPLER = 3;
 
 [[vk::push_constant]]
@@ -56,13 +59,74 @@ cbuffer PushConstants
 	GPUMaterialData* SBMaterials;
 	uint             MaterialIndex;
 
-	uint             _Pad0;
-	uint             _Pad1;
-	uint             _Pad2;
+	uint RadianceMap;
+	uint IrradianceMap;
+	uint BRDFLUT;
 
 	float4 LightDirection;
 	float4 LightColorIntensity;
 };
+
+float3 FresnelSchlickRoughness(float3 F0, float NdotV, float roughness)
+{
+	const float3 F90 = max(float3(1.0 - roughness), F0);
+
+	const float oneMinusCos = 1.0 - NdotV;
+	const float oneMinusCos2 = oneMinusCos * oneMinusCos;
+	const float oneMinusCos5 = oneMinusCos2 * oneMinusCos2 * oneMinusCos;
+
+	return F0 + (F90 - F0) * oneMinusCos5;
+}
+
+float3 IBL(float3 N, float3 V, float3 albedo, float3 F0, float metalness, float linearRoughness, float occlusion)
+{
+	const float NdotV = abs(dot(N, V)) + 0.00001;
+
+	// Frostbite GGX roughness / alpha.
+	const float roughness = linearRoughness * linearRoughness;
+
+	// Perfect mirror reflection direction.
+	const float3 R = reflect(-V, N);
+
+	// Shift the reflection toward the dominant direction of the GGX lobe.
+	const float3 dominantR = GetSpecularDominantDirection(N, R, roughness);
+
+	// Diffuse LD term.
+	const float3 irradiance = g_CubeTextures[IrradianceMap].SampleLevel(g_Samplers[LINEAR_CLAMP_SAMPLER], N, 0.0).rgb;
+
+	// Frostbite DFG LUT:
+	// R/G = GGX specular DFG
+	// B   = Disney diffuse DFG
+	const float3 dfg = g_Textures[BRDFLUT].SampleLevel(g_Samplers[LINEAR_CLAMP_SAMPLER], float2(NdotV, roughness), 0.0).rgb;
+
+	// Energy conservation.
+	const float3 F = FresnelSchlickRoughness(F0, NdotV, linearRoughness);
+
+	const float3 kD = (1.0 - F) * (1.0 - metalness);
+
+	// Diffuse AO can use the material occlusion directly.
+	const float3 diffuseIBL = kD * albedo * irradiance * dfg.b * occlusion;
+
+	// The radiance map's mip chain is stored using perceptually linear
+	// roughness, while the convolution itself uses GGX alpha roughness.
+	uint radianceWidth;
+	uint radianceHeight;
+	uint radianceMipCount;
+
+	g_CubeTextures[RadianceMap].GetDimensions(0, radianceWidth, radianceHeight, radianceMipCount);
+
+	const float mipLevel = linearRoughness * float(max(radianceMipCount, 1u) - 1u);
+
+	const float3 specularIrradiance = g_CubeTextures[RadianceMap].SampleLevel(g_Samplers[LINEAR_CLAMP_SAMPLER], dominantR, mipLevel).rgb;
+
+	// Frostbite roughness-aware specular occlusion.
+	const float specularOcclusion = ComputeSpecularOcclusion(NdotV, occlusion, roughness);
+
+	const float3 specularIBL = specularIrradiance * (F0 * dfg.r + dfg.g) * specularOcclusion;
+
+	return diffuseIBL + specularIBL;
+}
+
 
 [shader("vertex")]
 VertexOutput main(VertexInput input)
@@ -173,15 +237,17 @@ float4 main(VertexOutput input) : SV_Target
 
 	const float3 diffuse = kD * albedo.rgb * Fd / PI;
 
-	// Temporary ambient until IBL
-	const float3 ambient = albedo.rgb * 0.05 * occlusion;
-
 	// Rendering equation:
 	//
 	// Lo = (diffuse BRDF + specular BRDF) * incoming radiance * NdotL
+
+	// Direct lighting
 	const float3 directLighting = (diffuse + specular) * radiance * NdotL;
 
-	const float3 lighting = ambient + directLighting;
+	// Image-based lighting
+	const float3 indirectLighting = IBL(N, V, albedo.rgb, F0, metalness, linearRoughness, occlusion);
+
+	const float3 lighting = directLighting + indirectLighting;
 
 	return float4(lighting, albedo.a);
 }

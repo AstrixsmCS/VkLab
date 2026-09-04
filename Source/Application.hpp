@@ -51,11 +51,19 @@ struct DirectionalLight
 	float Intensity = 3.0f;
 };
 
+struct Environment
+{
+	std::shared_ptr<Texture> RadianceMap;
+	std::shared_ptr<Texture> IrradianceMap;
+};
+
 enum class ToneMapper : uint32_t
 {
 	Reinhard = 0,
 	ACES,
-	Uncharted2
+	Uncharted2,
+	AgX,
+	PBRNeutral
 };
 
 class Application
@@ -70,6 +78,7 @@ private:
 	bool InitializeVulkan();
 
 	bool CreateGeometryPass();
+	bool CreateBRDFLUT();
 	bool CreateSkyboxPass();
 	bool CreateToneMappingPass();
 	void RenderGeometryPass(VkCommandBuffer cmd, const UniformBuffer& cameraBuffer);
@@ -100,24 +109,24 @@ private:
 	float m_Exposure = 1.0f;
 	float m_WhitePoint = 4.0f;
 
-	int m_SkyboxLod = 0.0f;
+	float m_SkyboxLod = 0.0f;
 
 	Renderer  m_Renderer;
 
 	Pipeline m_GeometryPipeline;
 	Pipeline m_SkyboxPipeline;
-	ComputePipeline m_EquirectangularToCubemapPipeline;
+	ComputePipeline m_BRDFLUTPipeline;
 	Pipeline m_ToneMappingPipeline;
 
 	Material m_GeometryMaterial;
 	Material m_SkyboxMaterial;
-	Material m_EquirectangularToCubemapMaterial;
+	Material m_BRDFLUTMaterial;
 	Material m_ToneMappingMaterial;
 
-	Texture m_EnvironmentTexture;
+	Environment m_Environment;
+	Texture m_BRDFLUT;
 
-	Mesh m_Mesh;
-
+	std::vector<Mesh> m_Meshs;
 	std::vector<uint32_t> m_MaterialIndices; // Material indices parallel to m_Mesh.GetMaterials()
 
 	DirectionalLight m_DirectionalLight;

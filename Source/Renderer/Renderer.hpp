@@ -6,6 +6,8 @@
 #include "CommandBuffer.hpp"
 #include "RendererContext.hpp"
 
+#include "Material.hpp"
+
 #include <vector>
 #include <array>
 
@@ -103,9 +105,6 @@ public:
 
 	static void WaitForGPU();
 
-	bool BeginFrame();
-	void EndFrame();
-
 	SwapChain& GetSwapChain() { return *m_SwapChain; }
 
 	FrameContext& GetCurrentFrame() { return m_FrameData.Current(); }
@@ -122,6 +121,12 @@ public:
 
 	static constexpr uint32_t GetFramesInFlight() { return MAX_FRAMES_IN_FLIGHT; }
 
+	// ~Actual~ Renderer here... TODO: remove confusion later
+
+	bool BeginFrame();
+	void EndFrame();
+
+	static std::pair<std::shared_ptr<Texture>, std::shared_ptr<Texture>> CreateEnvironmentMap(const std::string& filepath);
 private:
 	void CreateSyncObjects();
 	void DestroySyncObjects();

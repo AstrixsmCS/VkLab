@@ -427,20 +427,38 @@ VkImageView Image::GetMipImageView(uint32_t mip)
 
 void ImageView::Create(const ImageViewSpecification& specification)
 {
-	assert(specification.Image);
-	assert(specification.Image->IsValid());
-
 	Destroy();
+
+	assert(specification.Image);
 
 	m_Specification = specification;
 
-	assert(m_Specification.Mip < m_Specification.Image->GetMipCount());
+	const uint32_t layerCount = m_Specification.Image->GetLayerCount();
 
-	m_ImageView = m_Specification.Image->CreateImageView(m_Specification.Mip, 1, 0, m_Specification.Image->GetLayerCount());
-
-	if (!m_Specification.DebugName.empty())
+	if (m_Specification.Storage)
 	{
-		SetDebugUtilsObjectName(RendererContext::Get().GetDevice(), VK_OBJECT_TYPE_IMAGE_VIEW, m_Specification.DebugName, m_ImageView);
+		VkImageViewCreateInfo viewInfo
+		{
+			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+			.image = m_Specification.Image->GetHandle(),
+			.viewType = m_Specification.Image->GetType() == ImageType::Cube ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D,
+			.format = ToVulkan(m_Specification.Image->GetFormat()),
+
+			.subresourceRange =
+			{
+				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+				.baseMipLevel = m_Specification.Mip,
+				.levelCount = 1,
+				.baseArrayLayer = 0,
+				.layerCount = layerCount
+			}
+		};
+
+		VK_CHECK(vkCreateImageView(RendererContext::Get().GetDevice(), &viewInfo, nullptr, &m_ImageView));
+	}
+	else
+	{
+		m_ImageView = m_Specification.Image->CreateImageView(m_Specification.Mip, 1, 0, layerCount);
 	}
 }
 

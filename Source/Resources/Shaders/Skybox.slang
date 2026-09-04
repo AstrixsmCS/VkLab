@@ -1,8 +1,5 @@
-[[vk::binding(0, 0)]]
-TextureCube<float4> g_SampledImages[];
-
-[[vk::binding(1, 0)]]
-SamplerState g_Samplers[];
+[[vk::binding(0, 0)]] TextureCube<float4> g_SampledImages[];
+[[vk::binding(1, 0)]] SamplerState g_Samplers[];
 
 static const uint LINEAR_CLAMP_SAMPLER = 1;
 
@@ -24,8 +21,7 @@ struct PushConstants
 	float Intensity;
 };
 
-[[vk::push_constant]]
-ConstantBuffer<PushConstants> g_PushConstants;
+[[vk::push_constant]] ConstantBuffer<PushConstants> g_PushConstants;
 
 struct VertexOutput
 {
