@@ -88,8 +88,6 @@ void Application::Shutdown()
 	DestroySceneImage();
 	DestroyDepthImage();
 
-	DestroyDefaultSamplers();
-
 	Descriptor::Shutdown();
 
 	Allocator::Shutdown();
@@ -150,8 +148,6 @@ bool Application::InitializeVulkan()
 	Allocator::Initialize();
 
 	Descriptor::Initialize();
-
-	CreateDefaultSamplers();
 
 	MaterialSystem::Initialize();
 
@@ -543,111 +539,6 @@ bool Application::LoadMesh()
 		return false;
 
 	return true;
-}
-
-void Application::CreateDefaultSamplers()
-{
-	auto CreateSampler = [this](DefaultSampler type, const SamplerSpecification& specification)
-	{
-		auto sampler = std::make_shared<Sampler>();
-
-		sampler->Create(specification);
-
-		m_DefaultSamplers[static_cast<size_t>(type)] = std::move(sampler);
-	};
-
-	CreateSampler(
-		DefaultSampler::LinearRepeat,
-		{
-			.DebugName = "Linear Repeat Sampler",
-
-			.MinFilter = SamplerFilter::Linear,
-			.MagFilter = SamplerFilter::Linear,
-			.Mip = SamplerMip::Linear,
-
-			.WrapU = SamplerWrap::Repeat,
-			.WrapV = SamplerWrap::Repeat,
-			.WrapW = SamplerWrap::Repeat
-		}
-	);
-
-	CreateSampler(
-		DefaultSampler::LinearClamp,
-		{
-			.DebugName = "Linear Clamp Sampler",
-
-			.MinFilter = SamplerFilter::Linear,
-			.MagFilter = SamplerFilter::Linear,
-			.Mip = SamplerMip::Linear,
-
-			.WrapU = SamplerWrap::ClampToEdge,
-			.WrapV = SamplerWrap::ClampToEdge,
-			.WrapW = SamplerWrap::ClampToEdge
-		}
-	);
-
-	CreateSampler(
-		DefaultSampler::NearestClamp,
-		{
-			.DebugName = "Nearest Clamp Sampler",
-
-			.MinFilter = SamplerFilter::Nearest,
-			.MagFilter = SamplerFilter::Nearest,
-			.Mip = SamplerMip::Disabled,
-
-			.WrapU = SamplerWrap::ClampToEdge,
-			.WrapV = SamplerWrap::ClampToEdge,
-			.WrapW = SamplerWrap::ClampToEdge
-		}
-	);
-
-	CreateSampler(
-		DefaultSampler::AnisotropicRepeat,
-		{
-			.DebugName = "Anisotropic Repeat Sampler",
-
-			.MinFilter = SamplerFilter::Linear,
-			.MagFilter = SamplerFilter::Linear,
-			.Mip = SamplerMip::Linear,
-
-			.WrapU = SamplerWrap::Repeat,
-			.WrapV = SamplerWrap::Repeat,
-			.WrapW = SamplerWrap::Repeat,
-
-			.Anisotropy = true,
-			.MaxAnisotropy = 8.0f
-		}
-	);
-
-	CreateSampler(
-		DefaultSampler::ShadowCompare,
-		{
-			.DebugName = "Shadow Compare Sampler",
-
-			.MinFilter = SamplerFilter::Linear,
-			.MagFilter = SamplerFilter::Linear,
-			.Mip = SamplerMip::Disabled,
-
-			.WrapU = SamplerWrap::ClampToEdge,
-			.WrapV = SamplerWrap::ClampToEdge,
-			.WrapW = SamplerWrap::ClampToEdge,
-
-			.Compare = true,
-			.CompareOperation = CompareOp::LessEqual
-		}
-	);
-}
-
-void Application::DestroyDefaultSamplers()
-{
-	for (auto& sampler : m_DefaultSamplers)
-	{
-		if (!sampler)
-			continue;
-
-		sampler->Destroy();
-		sampler.reset();
-	}
 }
 
 void Application::CreateDepthImage()

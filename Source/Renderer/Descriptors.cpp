@@ -19,7 +19,7 @@ void Descriptor::Initialize()
 		{
 			.binding = 1,
 			.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
-			.descriptorCount = MAX_SAMPLERS,
+			.descriptorCount = DEFAULT_SAMPLER_COUNT,
 			.stageFlags = VK_SHADER_STAGE_ALL
 		},
 		{
@@ -63,7 +63,7 @@ void Descriptor::Initialize()
 		},
 		{
 			.type = VK_DESCRIPTOR_TYPE_SAMPLER,
-			.descriptorCount = MAX_SAMPLERS
+			.descriptorCount = DEFAULT_SAMPLER_COUNT
 		},
 		{
 			.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
@@ -93,33 +93,34 @@ void Descriptor::Initialize()
 	VK_CHECK(vkAllocateDescriptorSets(device, &allocateInfo, &s_Set));
 
 	s_FreeTextureIndices.reserve(MAX_TEXTURES - 1);
-
 	for (uint32_t i = MAX_TEXTURES; i > 1; --i)
 	{
 		s_FreeTextureIndices.push_back(i - 1);
 	}
 
-	s_FreeSamplerIndices.reserve(MAX_SAMPLERS);
-
-	for (uint32_t i = MAX_SAMPLERS; i > 0; --i)
-	{
-		s_FreeSamplerIndices.push_back(i - 1);
-	}
-
 	s_FreeStorageImageIndices.reserve(MAX_STORAGE_IMAGES);
-
 	for (uint32_t i = MAX_STORAGE_IMAGES; i > 0; --i)
 	{
-		s_FreeStorageImageIndices.push_back(i - 1);
+	 	s_FreeStorageImageIndices.push_back(i - 1);
 	}
+
+	CreateDefaultSamplers();
 }
 
 void Descriptor::Shutdown()
 {
 	const VkDevice device = RendererContext::Get().GetDevice();
 
+	for (VkSampler& sampler : s_DefaultSamplers)
+	{
+		if (sampler == VK_NULL_HANDLE)
+			continue;
+
+		vkDestroySampler(device, sampler, nullptr);
+		sampler = VK_NULL_HANDLE;
+	}
+
 	s_FreeTextureIndices.clear();
-	s_FreeSamplerIndices.clear();
 	s_FreeStorageImageIndices.clear();
 
 	if (s_Pool != VK_NULL_HANDLE)
@@ -135,6 +136,84 @@ void Descriptor::Shutdown()
 	}
 
 	s_Set = VK_NULL_HANDLE;
+}
+
+void Descriptor::CreateDefaultSamplers()
+{
+	const VkDevice device = RendererContext::Get().GetDevice();
+
+	const VkPhysicalDeviceProperties& properties = RendererContext::Get().GetPhysicalDeviceProperties();
+
+	auto CreateSampler = [&](VkFilter filter, VkSamplerMipmapMode mipMode, VkSamplerAddressMode addressMode, bool anisotropy, bool compare) -> VkSampler
+	{
+		VkSamplerCreateInfo info
+		{
+			.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+			.magFilter = filter,
+			.minFilter = filter,
+			.mipmapMode = mipMode,
+			.addressModeU = addressMode,
+			.addressModeV = addressMode,
+			.addressModeW = addressMode,
+			.mipLodBias = 0.0f,
+			.anisotropyEnable = anisotropy ? VK_TRUE : VK_FALSE,
+			.maxAnisotropy = anisotropy ? properties.limits.maxSamplerAnisotropy : 1.0f,
+			.compareEnable = compare ? VK_TRUE : VK_FALSE,
+			.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
+			.minLod = 0.0f,
+			.maxLod = VK_LOD_CLAMP_NONE,
+			.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK
+		};
+
+	 	VkSampler sampler = VK_NULL_HANDLE;
+
+	 	VK_CHECK(vkCreateSampler(device, &info, nullptr, &sampler));
+
+	 	return sampler;
+	};
+
+	s_DefaultSamplers[static_cast<uint32_t>(DefaultSampler::LinearRepeat)] =
+		CreateSampler(VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR, VK_SAMPLER_ADDRESS_MODE_REPEAT, false, false);
+
+	s_DefaultSamplers[static_cast<uint32_t>(DefaultSampler::LinearClamp)] =
+		CreateSampler(VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, false, false);
+
+	s_DefaultSamplers[static_cast<uint32_t>(DefaultSampler::NearestClamp)] =
+		CreateSampler(VK_FILTER_NEAREST, VK_SAMPLER_MIPMAP_MODE_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, false, false);
+
+	s_DefaultSamplers[static_cast<uint32_t>(DefaultSampler::AnisotropicRepeat)] =
+		CreateSampler(VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_LINEAR, VK_SAMPLER_ADDRESS_MODE_REPEAT, true, false);
+
+	s_DefaultSamplers[static_cast<uint32_t>(DefaultSampler::ShadowCompare)] =
+	 	CreateSampler(VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, false, true);
+
+	for (uint32_t i = 0; i < DEFAULT_SAMPLER_COUNT; ++i)
+	{
+		WriteSampler(i, s_DefaultSamplers[i]);
+	}
+}
+
+void Descriptor::WriteSampler(uint32_t index, VkSampler sampler)
+{
+	VkDescriptorImageInfo imageInfo
+	{
+		.sampler = sampler,
+		.imageView = VK_NULL_HANDLE,
+		.imageLayout = VK_IMAGE_LAYOUT_UNDEFINED
+	};
+
+	VkWriteDescriptorSet write
+	{
+		.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		.dstSet = s_Set,
+		.dstBinding = 1,
+		.dstArrayElement = index,
+		.descriptorCount = 1,
+		.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
+		.pImageInfo = &imageInfo
+	};
+
+	vkUpdateDescriptorSets(RendererContext::Get().GetDevice(), 1, &write, 0, nullptr);
 }
 
 uint32_t Descriptor::RegisterTexture(VkImageView imageView)
@@ -161,38 +240,6 @@ uint32_t Descriptor::RegisterTexture(VkImageView imageView)
 		.dstArrayElement = index,
 		.descriptorCount = 1,
 		.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
-		.pImageInfo = &imageInfo
-	};
-
-	vkUpdateDescriptorSets(RendererContext::Get().GetDevice(), 1, &write, 0, nullptr);
-
-	return index;
-}
-
-uint32_t Descriptor::RegisterSampler(VkSampler sampler)
-{
-	assert(sampler != VK_NULL_HANDLE);
-	assert(!s_FreeSamplerIndices.empty());
-
-	const uint32_t index = s_FreeSamplerIndices.back();
-
-	s_FreeSamplerIndices.pop_back();
-
-	VkDescriptorImageInfo imageInfo
-	{
-		.sampler = sampler,
-		.imageView = VK_NULL_HANDLE,
-		.imageLayout = VK_IMAGE_LAYOUT_UNDEFINED
-	};
-
-	VkWriteDescriptorSet write
-	{
-		.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-		.dstSet = s_Set,
-		.dstBinding = 1,
-		.dstArrayElement = index,
-		.descriptorCount = 1,
-		.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
 		.pImageInfo = &imageInfo
 	};
 
@@ -241,16 +288,6 @@ void Descriptor::UnregisterTexture(uint32_t index)
 	assert(index < MAX_TEXTURES);
 
 	s_FreeTextureIndices.push_back(index);
-}
-
-void Descriptor::UnregisterSampler(uint32_t index)
-{
-	if (index == INVALID_INDEX)
-		return;
-
-	assert(index < MAX_SAMPLERS);
-
-	s_FreeSamplerIndices.push_back(index);
 }
 
 void Descriptor::UnregisterStorageImage(uint32_t index)

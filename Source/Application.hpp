@@ -33,17 +33,6 @@ struct UBCamera
 	float _Pad0 = 0.0f;
 };
 
-enum class DefaultSampler
-{
-	LinearRepeat = 0,
-	LinearClamp,
-	NearestClamp,
-	AnisotropicRepeat,
-	ShadowCompare,
-
-	Count
-};
-
 struct DirectionalLight
 {
 	glm::vec3 Direction{ -1.0f, -1.0f, -1.0f };
@@ -86,11 +75,6 @@ private:
 	void RenderToneMappingPass(VkCommandBuffer cmd, const VkExtent2D& extent);
 
 	bool LoadMesh();
-
-	void CreateDefaultSamplers();
-	void DestroyDefaultSamplers();
-
-	const std::shared_ptr<Sampler>& GetDefaultSampler(DefaultSampler sampler) const { return m_DefaultSamplers[static_cast<size_t>(sampler)]; }
 
 	void CreateDepthImage();
 	void DestroyDepthImage();
@@ -138,6 +122,4 @@ private:
 
 	Image m_DepthImage;
 	Image m_SceneImage;
-
-	std::array<std::shared_ptr<Sampler>, static_cast<size_t>(DefaultSampler::Count)> m_DefaultSamplers;
 };
